@@ -16,12 +16,13 @@ All commands are sent on the GlobalPlatform SCP03 secure channel, with command a
 | Generate asymmetric key pair         | Done                  |
 | Import key                           | Not yet               |
 | Load certificate                     | Done (3)              |
-| Generate certificate signing request | Done                  |
+| Generate certificate signing request | Done (4)              |
 | Generate self-signed certificate     | Not yet               |
 
 1. ACLs and PIN length are personalizable by modifying `initial_setup.py`. The PIN length is currently limited to 8 digits maximum.
 2. Global PIN is not supported yet.
 3. Only uncompressed certificates for now.
+4. The digest algorithm is fixed to SHA-256 for now.
 
 ## Applet installation
 
@@ -30,7 +31,7 @@ for a P71D600 target (J3R452).
 
 Then install the applet with the `CardReset` privilege as required by the specification:
 
-```bash
+```sh
 java -jar gp.jar --install OpenFIPS201-v2.0-jc3.0.5-jdk11.cap --privs CardReset
 ```
 
@@ -40,7 +41,7 @@ Make a Python virtual environment and install the packages:
 
 ### Linux installation
 
-```bash
+```sh
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
@@ -110,7 +111,7 @@ options:
 The admin key is the slot `9B`.
 
 Example:
-```bash
+```sh
 $ ./openfips201.py initialize --pin 132435 --puk 08978675 --admin-key '0102030405060708090A0B0C0D0E0F00'
 ```
 
@@ -131,7 +132,7 @@ options:
 ```
 
 Example:
-```bash
+```sh
 $ ./openfips201.py set-pin 123456
 ```
 
@@ -149,7 +150,7 @@ options:
 ```
 
 Example:
-```bash
+```sh
 $ ./openfips201.py set-admin-key '0102030405060708090A0B0C0D0E0F00'
 ```
 
@@ -168,7 +169,7 @@ options:
 ```
 
 Example:
-```bash
+```sh
 $ ./openfips201.py delete-key 9A
 ```
 
@@ -207,7 +208,7 @@ This is useful if you want to make a certificate manually with OpenSSL, starting
 then replacing the certificate's key by the card's key; then importing the certificate into the card.
 
 Example:
-```bash
+```sh
 $ ./openfips201.py make-key make-keypair-only -a ecc256 9A
 ```
 
@@ -257,7 +258,7 @@ options:
 ```
 
 Example:
-```bash
+```sh
 $ ./openfips201.py make-key make-self-signed -a ecc256 \
 	--common-name 'PIV website authentication' \
 	--key-usage digitalSignature \
@@ -269,7 +270,7 @@ $ ./openfips201.py make-key make-self-signed -a ecc256 \
 ```
 
 Example: import from a template:
-```bash
+```sh
 $ ./openfips201.py make-key make-self-signed -a ecc256 --from-template dummy-cert.pem 9C
 ```
 
@@ -290,7 +291,7 @@ options:
 ```
 
 Example:
-```bash
+```sh
 $ ./openfips201.py -a rsa3072 9A
 ```
 
@@ -308,6 +309,6 @@ options:
 ```
 
 Example:
-```bash
+```sh
 $ ./openfips201.py 9A card-9A.pem
 ```

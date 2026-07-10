@@ -171,7 +171,8 @@ def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -
     to_sign = der_encoder.encode(csr['certificationRequestInfo'])
 
     if algo.startswith('rsa'):
-        to_sign_padded = pkcs1.rsassa_pkcs1_v15.emsa_pkcs1_v15.encode(to_sign, 256, hash_class=hashlib.sha256)
+        data_len = int(algo[3:]) // 8
+        to_sign_padded = pkcs1.rsassa_pkcs1_v15.emsa_pkcs1_v15.encode(to_sign, data_len, hash_class=hashlib.sha256)
     else:  # algo.startswith('ecc')
         to_sign_padded = hashlib.sha256(to_sign).digest()
 
