@@ -293,7 +293,7 @@ delete_key_parser = subparsers.add_parser('delete-key', help='Delete a key')
 delete_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
 
 set_admin_key_parser = subparsers.add_parser('set-admin-key', help='Set the admin key 9B')
-set_admin_key_parser.add_argument('algo', choices=['tdea192', 'aes128', 'aes192', 'aes256'], metavar='ALGO', help='Key algorithm (one of %(choice)s)')
+set_admin_key_parser.add_argument('algo', choices=['tdea192', 'aes128', 'aes192', 'aes256'], metavar='ALGO', help='Key algorithm (one of %(choices)s)')
 set_admin_key_parser.add_argument('key', help='Key data', metavar='KEY')
 
 set_pin_parser = subparsers.add_parser('set-pin', help='Set a PIN or PUK code')
@@ -303,7 +303,7 @@ pin_group.add_argument('--puk', action='store_true', help='Set the PUK (81) inst
 pin_group.add_argument('--global-pin', action='store_true', help='Set the global PIN (??) instead of the PIN (80)')
 
 generate_key_parser = subparsers.add_parser('make-key', help='Generate key pairs and certificates/certificate signing requests')
-generate_key_subparsers = generate_key_parser.add_subparsers(title='subcommand', dest='manage_certs_subcommand', metavar='SUBCOMMAND')
+generate_key_subparsers = generate_key_parser.add_subparsers(title='subcommand', dest='manage_certs_subcommand', metavar='SUBCOMMAND', required=True)
 
 make_keypair_parser = generate_key_subparsers.add_parser('make-keypair-only', help='Make a keypair and save the public key')
 make_keypair_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
