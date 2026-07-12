@@ -9,6 +9,7 @@ from pyasn1.type.base import *
 from pyasn1.type.namedval import *
 from pyasn1.codec.ber import encoder as ber_encoder
 
+
 @dataclass
 class Optional:
     t: Asn1Type
@@ -16,6 +17,9 @@ class Optional:
 
 def tagCtx(t, n, constructed=False):
     return t.subtype(implicitTag=Tag(tagClassContext, tagFormatConstructed if constructed else tagFormatSimple, n))
+
+def tagCtxExplicit(t, n):
+    return t.subtype(explicitTag=Tag(tagClassContext, tagFormatConstructed, n))
 
 def tagApp(t, n, constructed=False):
     return t.subtype(implicitTag=Tag(tagClassApplication, tagFormatConstructed if constructed else tagFormatSimple, n))

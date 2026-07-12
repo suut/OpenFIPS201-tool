@@ -40,7 +40,7 @@ class KeyMechanism(Enumerated):  # OK
         'rsa1024': 6,
         'rsa2048': 7,
         'rsa3072': 5,
-        'rsa4096': 4,
+        'rsa4096': 22,
         'aes128': 8,
         'aes192': 10,
         'aes256': 12,

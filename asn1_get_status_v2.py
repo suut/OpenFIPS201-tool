@@ -7,9 +7,9 @@ from asn1_utils import components, values, tagCtx, tagSetApp
 
 class AppletState(Enumerated):
     namedValues = values({
-        'selectable': 3,
-        'secured': 7,
-        'locked': 15
+        'installed': 3,
+        'selectable': 7,
+        'secured': 15
     })
 
 

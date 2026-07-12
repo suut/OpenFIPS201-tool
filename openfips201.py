@@ -6,6 +6,9 @@ from functools import partial
 from pathlib import Path
 import hashlib
 import base64
+import random
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Any
 
 from smartcard.System import readers as readers
 from smartcard.reader.Reader import Reader
@@ -15,13 +18,12 @@ from pyasn1.codec.ber import decoder as ber_decoder
 from pyasn1.codec.ber import encoder as ber_encoder
 from pyasn1.codec.der import encoder as der_encoder
 from pyasn1.codec.der import decoder as der_decoder
-from pyasn1.type.univ import BitString, Integer
+from pyasn1.type.univ import BitString, Integer, ObjectIdentifier, Null
 
 import pkcs1
-from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey, ECDSA
-from cryptography.hazmat.primitives.hashes import SHA256
-from cryptography.hazmat.primitives.asymmetric.utils import Prehashed
-from cryptography.hazmat.primitives.serialization.base import load_der_public_key
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey, ECDSA, SECP256R1, SECP384R1
+from cryptography.hazmat.primitives.hashes import SHA1, SHA224, SHA256, SHA384, SHA512, HashAlgorithm
+from cryptography.exceptions import InvalidSignature
 
 import asn1_utils
 import scp03
@@ -147,39 +149,74 @@ def load_cert(scp: scp03.SCP03, key_id: bytes, data: bytes):
     print('Success')
 
 
-def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -> asn1_x509.CertificationRequest:
-    if not algo.startswith('rsa') and not algo.startswith('ecc'):
-        sys.exit('Invalid algo')
-    if key_id not in cert_by_key:
-        sys.exit('Invalid key ID')
-    if algo.startswith('ecc') and not algo in ('ecc256', 'ecc384'):
-        sys.exit('Invalid ECC algorithm')
+def get_cryptography_hash(hash_function: Callable[[...], Any]) -> HashAlgorithm:
+    if hash_function is hashlib.sha1:
+        return SHA1()
+    elif hash_function is hashlib.sha224:
+        return SHA224()
+    elif hash_function is hashlib.sha256:
+        return SHA256()
+    elif hash_function is hashlib.sha512:
+        return SHA512()
+    else:
+        raise ValueError(f'Unknown hash {hash_function!r}')
 
+
+def verify_signature(pubkey: asn1_x509.SubjectPublicKeyInfo, data: bytes, signature: bytes, hash_function=hashlib.sha256) -> bool:
+    """
+    Verify a signature, with RSASSA-PKCS#1v1.5 for RSA keys and ECDSA for ECC keys
+    :param pubkey: The public key
+    :param data: The signed data
+    :param signature: The signature
+    :param hash_function: The hash function to use
+    :return: Whether the signature verification was successful
+    """
+    algo: ObjectIdentifier = pubkey['algorithm']['algorithm']
+
+    if algo == asn1_x509.oids['rsaEncryption']:
+        pubkey_data: asn1_x509.RSAPublicKey = der_decoder.decode(pubkey['subjectPublicKey'].asOctets(), asn1Spec=asn1_x509.RSAPublicKey())
+        pubkey_rsa = pkcs1.keys.RsaPublicKey(int(pubkey_data['modulus']), int(pubkey_data['publicExponent']))
+        return pkcs1.rsassa_pkcs1_v15.verify(pubkey_rsa, data, signature, hash_class=hash_function)
+
+    elif algo == asn1_x509.oids['ecPublicKey']:
+        pubkey_data: bytes = pubkey['subjectPublicKey'].asOctets()
+        if pubkey['algorithm']['parameters'] == asn1_x509.oids['prime256v1']:
+            curve = SECP256R1()
+        elif pubkey['algorithm']['parameters'] == asn1_x509.oids['ansip384r1']:
+            curve = SECP384R1()
+        else:
+            raise ValueError('invalid curve')
+        pubkey_ec = EllipticCurvePublicKey.from_encoded_point(curve, pubkey_data)
+        try:
+            pubkey_ec.verify(signature, data, ECDSA(get_cryptography_hash(hash_function)))
+        except InvalidSignature:
+            return False
+        else:
+            return True
+
+    else:
+        raise ValueError('unknown algo')
+
+
+def raw_sign(scp: scp03.SCP03, key_id: bytes, algo: str, data: bytes) -> bytes:
+    """
+    Sign already hashed and padded data
+    :param scp: Secure channel
+    :param key_id: Key ID (9A, 9C, ...)
+    :param algo: Algorithm to use
+    :param data: Data to sign
+    :return: Signature
+    """
+    if len(key_id) != 1:
+        sys.exit('KEY-ID must be 1 byte')
+    if algo not in ('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'):
+        sys.exit('Invalid algo')
     algo_id = asn1_put_data_v2.KeyMechanism.namedValues[algo]
 
-    if existing_pubkey:
-        pubkey_x509, _ = der_decoder.decode(existing_pubkey, asn1Spec=asn1_x509.SubjectPublicKeyInfo())
-    else:
-        # Generate key pair
-        pubkey_x509 = create_keypair(scp, key_id, algo)
-
-    # Construct the CSR
-    csr = asn1_x509.CertificationRequest()
-    csr['certificationRequestInfo']['version'] = 0
-    csr['certificationRequestInfo']['subjectPKInfo'] = pubkey_x509
-
-    to_sign = der_encoder.encode(csr['certificationRequestInfo'])
-
-    if algo.startswith('rsa'):
-        data_len = int(algo[3:]) // 8
-        to_sign_padded = pkcs1.rsassa_pkcs1_v15.emsa_pkcs1_v15.encode(to_sign, data_len, hash_class=hashlib.sha256)
-    else:  # algo.startswith('ecc')
-        to_sign_padded = hashlib.sha256(to_sign).digest()
-
-    # Sign the CSR, each APDU must have a payload of 224 bytes maximum
+    # Each APDU must have a payload of 224 bytes maximum
     signing_request = asn1_general_authenticate.SigningRequest()
     signing_request['response'] = b''
-    signing_request['challenge'] = to_sign_padded
+    signing_request['challenge'] = data
 
     signing_request_encoded = ber_encoder.encode(signing_request, defMode=True)
 
@@ -201,23 +238,234 @@ def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -
 
     signing_response, _ = ber_decoder.decode(resp, asn1Spec=asn1_general_authenticate.SigningResponse())
 
-    signed_csr = signing_response['response'].asOctets()
+    return signing_response['response'].asOctets()
+
+
+def sign(scp: scp03.SCP03, key_id: bytes, algo: str, data: bytes, hash_function=hashlib.sha256):
+    if len(key_id) != 1:
+        sys.exit('KEY-ID must be 1 byte')
+    if algo not in ('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'):
+        sys.exit('Invalid algo')
 
     if algo.startswith('rsa'):
-        pubkey_rsa, _ = der_decoder.decode(pubkey_x509['subjectPublicKey'].asOctets(), asn1Spec=asn1_x509.RSAPublicKey())
-        pkcs1_pubkey = pkcs1.keys.RsaPublicKey(int(pubkey_rsa['modulus']), int(pubkey_rsa['publicExponent']))
-        sig_ok = pkcs1.rsassa_pkcs1_v15.verify(pkcs1_pubkey, to_sign, signed_csr, hashlib.sha256)
-        assert sig_ok, 'Signature must be valid'
-        print('Signature OK')
+        mlen = int(algo[3:]) // 8
+        to_sign_hashed = pkcs1.rsassa_pkcs1_v15.emsa_pkcs1_v15.encode(data, mlen, hash_class=hash_function)
+    elif algo.startswith('ec'):
+        to_sign_hashed = hash_function(data).digest()
+    else:
+        raise ValueError()
 
+    return raw_sign(scp, key_id, algo, to_sign_hashed)
+
+
+def make_self_signed(scp: scp03.SCP03, key_id: bytes, algo: str, args: argparse.Namespace, existing_pubkey=None):
+    # parse key usages
+    if args.key_usage is None:
+        key_usage = ['digitalSignature']
+    elif 'none' in args.key_usage:
+        assert args.key_usage == ['none'], 'none must be the only element'
+        key_usage = []
+    else:
+        key_usage = args.key_usage
+    if args.extended_key_usage is None:
+        extended_key_usage = ['clientAuth']
+    elif 'none' in args.extended_key_usage:
+        assert args.extended_key_usage == ['none'], 'none must be the only element'
+        extended_key_usage = []
+    else:
+        extended_key_usage = args.extended_key_usage
+    if args.email is None:
+        emails = []
+    elif 'none' in args.email:
+        assert args.email == ['none'], 'none must be the only element'
+        emails = []
+    else:
+        emails = args.email
+
+    # parse digest
+    if args.digest is None:
+        digest = 'sha256'
+        digest_func = hashlib.sha256
+    else:
+        digest = args.digest
+        digest_func = getattr(hashlib, args.digest)
+
+    if args.algo.startswith('rsa'):
+        sig_algo = asn1_x509.rsa_signature_oids_by_digest[digest]
+    elif args.algo.startswith('ecc'):
+        sig_algo = asn1_x509.ecdsa_signature_oids_by_digest[digest]
+    else:
+        raise ValueError('Invalid algo')
+
+    # Make or get the public key
+    if existing_pubkey is not None:
+        pubkey_x509, _ = der_decoder.decode(existing_pubkey, asn1Spec=asn1_x509.SubjectPublicKeyInfo())
+        if algo.startswith('rsa'):
+            assert pubkey_x509['algorithm'] == asn1_x509.oids['rsaEncryption']
+            assert pubkey_x509['parameters'] == Null()
+        elif algo.startswith('ecc'):
+            assert pubkey_x509['algorithm'] == asn1_x509.oids['ecPublicKey']
+            if algo == 'ecc256':
+                assert pubkey_x509['parameters'] == asn1_x509.oids['prime256v1']
+            else:
+                assert pubkey_x509['parameters'] == asn1_x509.oids['ansip384r1']
+    else:
+        pubkey_x509 = create_keypair(scp, key_id, algo)
+
+    # Make the certificate:
+    inner_cert = asn1_x509.TBSCertificate()
+
+    # Version
+    inner_cert['version'] = 2
+
+    # Serial number
+    inner_cert['serialNumber'] = random.SystemRandom().getrandbits(159) # positive 20-bytes number
+
+    # Signature algo
+    inner_cert['signature']['algorithm'] = sig_algo
+    if algo.startswith('rsa'):
+        inner_cert['signature']['parameters'] = Null()
+
+    # Issuer
+    if args.country and args.country != 'none':
+        country = asn1_x509.RelativeDistinguishedName()
+        country[0]['type'] = asn1_x509.oids['countryName']
+        country[0]['value']['printableString'] = args.country.format(KEY_ID=key_id.hex().upper())
+        inner_cert['issuer'].append(country)
+    if args.state_or_province and args.state_or_province != 'none':
+        state_or_province = asn1_x509.RelativeDistinguishedName()
+        state_or_province[0]['type'] = asn1_x509.oids['stateOrProvinceName']
+        state_or_province[0]['value']['utf8String'] = args.state_or_province.format(KEY_ID=key_id.hex().upper())
+        inner_cert['issuer'].append(state_or_province)
+    if args.locality and args.locality != 'none':
+        locality = asn1_x509.RelativeDistinguishedName()
+        locality[0]['type'] = asn1_x509.oids['localityName']
+        locality[0]['value']['utf8String'] = args.locality.format(KEY_ID=key_id.hex().upper())
+        inner_cert['issuer'].append(locality)
+    if args.organization and args.organization != 'none':
+        organization = asn1_x509.RelativeDistinguishedName()
+        organization[0]['type'] = asn1_x509.oids['organizationName']
+        organization[0]['value']['utf8String'] = args.organization.format(KEY_ID=key_id.hex().upper())
+        inner_cert['issuer'].append(organization)
+    if args.organizational_unit and args.organizational_unit != 'none':
+        organizational_unit = asn1_x509.RelativeDistinguishedName()
+        organizational_unit[0]['type'] = asn1_x509.oids['organizationalUnitName']
+        organizational_unit[0]['value']['utf8String'] = args.organizational_unit.format(KEY_ID=key_id.hex().upper())
+        inner_cert['issuer'].append(organizational_unit)
+    if args.common_name and args.common_name != 'none':
+        common_name = asn1_x509.RelativeDistinguishedName()
+        common_name[0]['type'] = asn1_x509.oids['commonName']
+        common_name[0]['value']['utf8String'] = args.common_name.format(KEY_ID=key_id.hex().upper())
+        inner_cert['issuer'].append(common_name)
+
+    # Validity
+    not_before = datetime.now()
+    not_after = not_before + timedelta(days=args.validity)
+    inner_cert['validity']['notBefore']['utcTime'] = asn1_x509.make_utctime(not_before)
+    inner_cert['validity']['notAfter']['utcTime'] = asn1_x509.make_utctime(not_after)
+
+    # Subject
+    inner_cert['subject'] = inner_cert['issuer']
+
+    # Public key
+    inner_cert['subjectPublicKeyInfo'] = pubkey_x509
+
+    # Extensions:
+
+    # Subject key identifier
+    akid = asn1_x509.Extension()
+    akid['extnID'] = asn1_x509.oids['subjectKeyIdentifier']
+    akid['extnValue'] = asn1_x509.encode_subject_key_identifier(hashlib.sha1(der_encoder.encode(pubkey_x509)).digest())
+    inner_cert['extensions'].append(akid)
+
+    # Authority key identifier
+    skid = asn1_x509.Extension()
+    skid['extnID'] = asn1_x509.oids['authorityKeyIdentifier']
+    skid['extnValue'] = asn1_x509.encode_authority_key_identifier(hashlib.sha1(der_encoder.encode(pubkey_x509)).digest())
+    inner_cert['extensions'].append(skid)
+
+    # Basic constraints
+    basic_constraints = asn1_x509.Extension()
+    basic_constraints['extnID'] = asn1_x509.oids['basicConstraints']
+    basic_constraints['critical'] = True
+    basic_constraints['extnValue'] = asn1_x509.encode_basic_constraints(args.ca, 0 if args.ca and args.last_ca_in_chain else None)
+    inner_cert['extensions'].append(basic_constraints)
+
+    # Key usage
+    key_usage_ext = asn1_x509.Extension()
+    key_usage_ext['extnID'] = asn1_x509.oids['keyUsage']
+    key_usage_ext['critical'] = True
+    key_usage_ext['extnValue'] = asn1_x509.encode_key_usage(key_usage)
+    inner_cert['extensions'].append(key_usage_ext)
+
+    # Extended key usage
+    if extended_key_usage:
+        ext_key_usage_ext = asn1_x509.Extension()
+        ext_key_usage_ext['extnID'] = asn1_x509.oids['extKeyUsage']
+        if args.critical_extended_key_usage:
+            ext_key_usage_ext['critical'] = True
+        ext_key_usage_ext['extnValue'] = asn1_x509.encode_ext_key_usage(extended_key_usage)
+        inner_cert['extensions'].append(ext_key_usage_ext)
+
+    # Subject alt name
+    if emails:
+        subject_alt_name = asn1_x509.Extension()
+        subject_alt_name['extnID'] = asn1_x509.oids['subjectAltName']
+        subject_alt_name['extnValue'] = asn1_x509.encode_subject_alt_name_emails(emails, KEY_ID=key_id.hex().upper())
+        inner_cert['extensions'].append(subject_alt_name)
+
+    to_sign = der_encoder.encode(inner_cert)
+
+    signature = sign(scp, key_id, algo, to_sign, digest_func)
+
+    cert = asn1_x509.Certificate()
+    cert['tbsCertificate'] = inner_cert
+    cert['signatureAlgorithm'] = inner_cert['signature']
+    cert['signatureValue'] = BitString.fromOctetString(signature)
+
+    return der_encoder.encode(cert)
+
+
+def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -> asn1_x509.CertificationRequest:
+    if not algo.startswith('rsa') and not algo.startswith('ecc'):
+        sys.exit('Invalid algo')
+    if key_id not in cert_by_key:
+        sys.exit('Invalid key ID')
+    if algo.startswith('ecc') and not algo in ('ecc256', 'ecc384'):
+        sys.exit('Invalid ECC algorithm')
+
+    if existing_pubkey:
+        pubkey_x509, _ = der_decoder.decode(existing_pubkey, asn1Spec=asn1_x509.SubjectPublicKeyInfo())
+        if algo.startswith('rsa'):
+            assert pubkey_x509['algorithm'] == asn1_x509.oids['rsaEncryption']
+            assert pubkey_x509['parameters'] == Null()
+        elif algo.startswith('ecc'):
+            assert pubkey_x509['algorithm'] == asn1_x509.oids['ecPublicKey']
+            if algo == 'ecc256':
+                assert pubkey_x509['parameters'] == asn1_x509.oids['prime256v1']
+            else:
+                assert pubkey_x509['parameters'] == asn1_x509.oids['ansip384r1']
+    else:
+        # Generate key pair
+        pubkey_x509 = create_keypair(scp, key_id, algo)
+
+    # Construct the CSR
+    csr = asn1_x509.CertificationRequest()
+    csr['certificationRequestInfo']['version'] = 0
+    csr['certificationRequestInfo']['subjectPKInfo'] = pubkey_x509
+
+    to_sign = der_encoder.encode(csr['certificationRequestInfo'])
+
+    signed_csr = sign(scp, key_id, algo, to_sign)
+    sig_ok = verify_signature(pubkey_x509, to_sign, signed_csr)
+    assert sig_ok, 'Signature must be valid (was the correct key used?)' if existing_pubkey else 'Signature must be valid'
+    print('Signature OK')
+
+    if algo.startswith('rsa'):
         csr['signatureAlgorithm']['algorithm'] = asn1_x509.oids['sha256WithRSAEncryption']
 
     elif algo.startswith('ecc'):
-        pubkey_ecc: EllipticCurvePublicKey = load_der_public_key(der_encoder.encode(pubkey_x509))
-        pubkey_ecc.verify(signed_csr, to_sign_padded, ECDSA(Prehashed(SHA256())))
-        print('Signature OK')
-
-        csr['signatureAlgorithm']['algorithm'] = asn1_x509.oids['ecdsaWithSHA256']
+        csr['signatureAlgorithm']['algorithm'] = asn1_x509.oids['ecdsa-with-SHA256']
 
     csr['signature'] = BitString.fromOctetString(signed_csr)
 
@@ -250,6 +498,7 @@ def create_keypair(scp: scp03.SCP03, key_id: bytes, algo: str) -> asn1_x509.Subj
         pubkey_rsa['publicExponent'] = Integer(BitString.fromOctetString(pubkey['rsaExponent']).asInteger())
         pubkey_x509['subjectPublicKey'] = BitString.fromOctetString(der_encoder.encode(pubkey_rsa))
         pubkey_x509['algorithm']['algorithm'] = asn1_x509.oids['rsaEncryption']
+        pubkey_x509['algorithm']['parameters'] = Null()
 
     elif algo.startswith('ecc'):
         pubkey, _ = ber_decoder.decode(pubkey_raw, asn1Spec=asn1_generate_asymmetric_key_pair.PubkeyECCResponse())
@@ -280,7 +529,7 @@ initialize_parser.add_argument('--puk', default='12345678', help='Initial PIN (d
 
 create_key_parser = subparsers.add_parser('create-key', help='Create a key slot')
 create_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
-create_key_parser.add_argument('algo', help='Key algo (one of %(choices)s)', choices=[*asn1_put_data_v2.KeyMechanism.namedValues.keys()], metavar='ALGO')
+create_key_parser.add_argument('algo', help='Key algo (one of %(choices)s)', choices=('tdea192', 'rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'aes128', 'aes192', 'aes256', 'ecc256', 'ecc384', 'cs2', 'cs7'), metavar='ALGO')
 create_key_parser.add_argument('role', help='Key role (one of %(choices)s)', choices=[*asn1_put_data_v2.KeyRole.namedValues.keys()], metavar='ROLE')
 create_key_parser.add_argument('--no-rsa-crt', action='store_true', help='Do not use RSA CRT for RSA keys')
 create_key_parser.add_argument('--permit-external', action='store_true', help='Permit external authenticate')
@@ -289,9 +538,6 @@ create_key_parser.add_argument('--importable', action='store_true', help='Key is
 create_key_parser.add_argument('--admin-key', default='9B', help='Admin key (default %(default)s)', metavar='KEY')
 create_key_parser.add_argument('--mode-contact', default='always', choices=[*asn1_put_data_v2.AccessMode.namedValues.keys()], help='Contact ACL (one of %(choices)s; default %(default)s)', metavar='MODE')
 create_key_parser.add_argument('--mode-contactless', default='always', choices=[*asn1_put_data_v2.AccessMode.namedValues.keys()], help='Contactless ACL (one of %(choices)s; default %(default)s)', metavar='MODE')
-
-delete_key_parser = subparsers.add_parser('delete-key', help='Delete a key')
-delete_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
 
 set_admin_key_parser = subparsers.add_parser('set-admin-key', help='Set the admin key 9B')
 set_admin_key_parser.add_argument('algo', choices=['tdea192', 'aes128', 'aes192', 'aes256'], metavar='ALGO', help='Key algorithm (one of %(choices)s)')
@@ -314,21 +560,28 @@ make_keypair_parser.add_argument('-o', '--output', default='card-{KEY_ID}.key', 
 make_self_signed_parser = generate_key_subparsers.add_parser('make-self-signed', help='Make a self-signed certificate')
 make_self_signed_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
 make_self_signed_parser.add_argument('--with-key', help='Use the public key that was previously generated with make-keypair-only', metavar='PUBKEY')
+make_self_signed_parser.add_argument('--no-load', action='store_true', help='Do not automatically load the certificate into the card')
 make_self_signed_parser.add_argument('-a', '--algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), default='rsa2048', help='The public-key algorithm to use (default %(default)s)')
 make_self_signed_parser.add_argument('-o', '--output', default='card-{KEY_ID}.crt', help='Where to save the self-signed certificate (default %(default)s)', metavar='FILE')
-make_self_signed_parser.add_argument('--from-template', help='Certificate to use as a template, ignoring the other certificate parameters (default: none)')
-make_self_signed_parser.add_argument('--common-name', default='PIV certificate {KEY_ID}', help='CSR/Certificate common name (default "%(default)s")')
-make_self_signed_parser.add_argument('--email-address', help='CSR/Certificate email address (default none)')
-make_self_signed_parser.add_argument('--organization', help='CSR/Certificate organization (default none)')
-make_self_signed_parser.add_argument('--organizational-unit', help='CSR/Certificate organizational unit (default none)')
-make_self_signed_parser.add_argument('--locality', help='CSR/Certificate locality name (default none)')
-make_self_signed_parser.add_argument('--country', help='CSR/Certificate country (default none)')
-make_self_signed_parser.add_argument('--key-usage', default='digitalSignature', help='CSR/Certificate key usage, comma-separated (default %(default)s, choices are none, digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment, keyAgreement, keyCertSign, cRLSign, encipherOnly, decipherOnly)')
-make_self_signed_parser.add_argument('--extended-key-usage', default='clientAuth', help='CSR/Certificate extended key usage, comma-separated (default %(default)s, choices are none, any, serverAuth, clientAuth, codeSigning, emailProtection, timeStamping, OCSPSigning, or arbitrary OIDs)')
+make_self_signed_parser.add_argument('--common-name', default='PIV certificate {KEY_ID}', help='Certificate common name (default "%(default)s")', metavar='NAME')
+make_self_signed_parser.add_argument('--email', action='append', help='Email address, can be given multiple times', metavar='EMAIL')
+make_self_signed_parser.add_argument('--organization', help='Certificate organization (default none)', metavar='ORG')
+make_self_signed_parser.add_argument('--organizational-unit', help='Certificate organizational unit (default none)', metavar='ORG-UNIT')
+make_self_signed_parser.add_argument('--state-or-province', help='Certificate state or province name (default none)', metavar='STATE')
+make_self_signed_parser.add_argument('--locality', help='Certificate locality name (default none)')
+make_self_signed_parser.add_argument('--country', help='Certificate country (default none)')
+make_self_signed_parser.add_argument('--key-usage', action='append', help='Certificate key usage, can be given multiple times (default digitalSignature, choices are none, digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment, keyAgreement, keyCertSign, cRLSign, encipherOnly, decipherOnly)', metavar='USAGE')
+make_self_signed_parser.add_argument('--extended-key-usage', action='append', help='Certificate extended key usage, can be given multiple times (default clientAuth, choices are none, anyExtendedKeyUsage, serverAuth, clientAuth, codeSigning, emailProtection, timeStamping, OCSPSigning, or arbitrary OIDs)', metavar='EKU')
 make_self_signed_parser.add_argument('--critical-extended-key-usage', action='store_true', help='Mark the extended key usage as critical')
-make_self_signed_parser.add_argument('--validity', default=30, type=int, help='Certificate validity in days (default %(default)s days)')
+make_self_signed_parser.add_argument('--validity', default=30, type=int, help='Certificate validity in days (default %(default)s days)', metavar='DAYS')
 make_self_signed_parser.add_argument('--ca', action='store_true', help='Make a CA certificate')
 make_self_signed_parser.add_argument('--last-ca-in-chain', action='store_true', help='Mark the certificate as the last CA in the chain (the certificate will not be able to sign other CA certificates)')
+digest_group = make_self_signed_parser.add_mutually_exclusive_group()
+digest_group.add_argument('--sha1', dest='digest', action='store_const', const='sha1', help='Use SHA-1 digest for the signature')
+digest_group.add_argument('--sha224', dest='digest', action='store_const', const='sha224', help='Use SHA-224 digest for the signature')
+digest_group.add_argument('--sha256', dest='digest', action='store_const', const='sha256', help='Use SHA-256 digest for the signature (default)')
+digest_group.add_argument('--sha384', dest='digest', action='store_const', const='sha384', help='Use SHA-384 digest for the signature')
+digest_group.add_argument('--sha512', dest='digest', action='store_const', const='sha512', help='Use SHA-512 digest for the signature')
 
 make_csr_parser = generate_key_subparsers.add_parser('make-csr', help='Make a certificate signing request intended to be signed by an external CA')
 make_csr_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
@@ -339,6 +592,8 @@ make_csr_parser.add_argument('-o', '--output', default='card-{KEY_ID}.csr', help
 load_cert_parser = generate_key_subparsers.add_parser('load-cert', help='Load a certificate')
 load_cert_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
 load_cert_parser.add_argument('cert', help='Certificate', metavar='CERT')
+
+secure_applet_parser = subparsers.add_parser('secure-applet', help='Set the applet state to SECURED and prevent further admin commands')
 
 args = parser.parse_args()
 
@@ -445,9 +700,6 @@ match args.command:
 
         print('Success')
 
-    case 'delete-key':
-        raise NotImplementedError()
-
     case 'set-admin-key':
         if not is_hex(args.key):
             sys.exit('Admin key must be hexadecimal')
@@ -455,6 +707,11 @@ match args.command:
         admin_key: bytes = x(args.key)
         print(f'Setting key 9B with mechanism {args.algo} to', admin_key.hex().upper())
         set_admin_key(scp, admin_key, args.algo)
+        print('Success')
+
+    case 'secure-applet':
+        req = asn1_utils.encode_unstructured(0x5F, b'')
+        scp.transmit(x('00DB3F00'), req)
         print('Success')
 
     case 'set-pin':
@@ -497,7 +754,14 @@ match args.command:
                 output = Path(args.output.format(KEY_ID=key_id.hex().upper()))
                 if not output.parent.exists():
                     sys.exit(f'Directory {output.parent} does not exist')
-                raise NotImplementedError()  # TODO
+                existing_pubkey = None
+                if args.with_key is not None:
+                    existing_pubkey = load_pem_der(Path(args.with_key).read_bytes())
+                cert = make_self_signed(scp, key_id, args.algo, args, existing_pubkey)
+                output.write_bytes(cert)
+                if not args.no_load:
+                    load_cert(scp, key_id, cert)
+                print('Success')
 
             case 'make-csr':
                 output = Path(args.output.format(KEY_ID=key_id.hex().upper()))
