@@ -7,8 +7,10 @@ from pathlib import Path
 import hashlib
 import base64
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Callable, Any
+
+import yaml
 
 from smartcard.System import readers as readers
 from smartcard.reader.Reader import Reader
@@ -34,7 +36,6 @@ import asn1_change_reference_data_v2
 import asn1_general_authenticate
 import asn1_generate_asymmetric_key_pair
 import asn1_x509
-import initial_setup
 
 
 def select_reader(selected=None):
@@ -156,6 +157,8 @@ def get_cryptography_hash(hash_function: Callable[[...], Any]) -> HashAlgorithm:
         return SHA224()
     elif hash_function is hashlib.sha256:
         return SHA256()
+    elif hash_function is hashlib.sha384:
+        return SHA384()
     elif hash_function is hashlib.sha512:
         return SHA512()
     else:
@@ -417,6 +420,9 @@ def make_self_signed(scp: scp03.SCP03, key_id: bytes, algo: str, args: argparse.
     to_sign = der_encoder.encode(inner_cert)
 
     signature = sign(scp, key_id, algo, to_sign, digest_func)
+    sig_ok = verify_signature(pubkey_x509, to_sign, signature, digest_func)
+    assert sig_ok, 'Signature must be valid'
+    print('Signature OK:', sig_ok)
 
     cert = asn1_x509.Certificate()
     cert['tbsCertificate'] = inner_cert
@@ -511,6 +517,13 @@ def create_keypair(scp: scp03.SCP03, key_id: bytes, algo: str) -> asn1_x509.Subj
 
     print('Create key pair success')
     return pubkey_x509
+
+
+def yaml_x_parser(loader: yaml.CLoader, value: yaml.ScalarNode):
+    return bytes.fromhex(value.value)
+
+
+yaml.CLoader.add_constructor('tag:yaml.org,2002:x', yaml_x_parser)
 
 
 parser = argparse.ArgumentParser(description='OpenFIPS201 v2.0.0 configuration tool', epilog='Call this program without a subcommand to print version and status information')
@@ -622,8 +635,11 @@ match args.command:
         pin: bytes = args.pin.encode('ascii')
         puk: bytes = args.puk.encode('ascii')
 
+        with open(Path(__file__).parent / 'initial_setup.yaml') as f:
+            setup = yaml.load(f, yaml.CLoader)
+
         setup_reqs: list[asn1_put_data_v2.PutDataBulkRequest] = [
-            *map(partial(native_decoder.decode, asn1Spec=asn1_put_data_v2.PutDataBulkRequest()), initial_setup.reqs)]
+            *map(partial(native_decoder.decode, asn1Spec=asn1_put_data_v2.PutDataBulkRequest()), setup)]
 
         admin_key_request = asn1_put_data_v2.PutDataRequest()
         admin_key_request['createKeyRequest']['id'] = x('9B')

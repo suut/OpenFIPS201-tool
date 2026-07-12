@@ -249,8 +249,8 @@ options:
 Example:
 ```sh
 $ ./openfips201.py make-key make-self-signed -a ecc384 \
-    --sha384 \
-    --validity 365 \
+  --sha384 \
+  --validity 365 \
   --common-name 'PIV email signature' \
   --key-usage digitalSignature \
   --extended-key-usage emailProtection \
