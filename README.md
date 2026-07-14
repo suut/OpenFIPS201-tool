@@ -10,18 +10,16 @@ All commands are sent on the GlobalPlatform SCP03 secure channel, with command a
 |--------------------------------------|-----------------------|
 | Create initial structure             | Done (1)              |
 | Create key slot                      | Done                  |
-| Set PIN and PUK                      | Done (2)              |
+| Set PIN and PUK                      | Done                  |
 | Set admin key `9B`                   | Done                  |
 | Generate asymmetric key pair         | Done                  |
-| Import key                           | Not yet               |
-| Load certificate                     | Done (3)              |
+| Import key                           | Done                  |
+| Load certificate                     | Done                  |
 | Generate certificate signing request | Done                  |
 | Generate self-signed certificate     | Done                  |
 | Secure the applet                    | Done                  |
 
 1. ACLs and PIN length are personalizable by modifying `initial_setup.py`, default is 4 to 8 digits.
-2. Global PIN is not supported yet.
-3. Only uncompressed certificates for now.
 
 ## Applet installation
 

@@ -637,7 +637,6 @@ set_pin_parser = subparsers.add_parser('set-pin', help='Set a PIN or PUK code')
 set_pin_parser.add_argument('pin', help='New PIN value', metavar='PIN')
 pin_group = set_pin_parser.add_mutually_exclusive_group()
 pin_group.add_argument('--puk', action='store_true', help='Set the PUK (81) instead of the PIN (80)')
-pin_group.add_argument('--global-pin', action='store_true', help='Set the global PIN (??) instead of the PIN (80)')
 
 generate_key_parser = subparsers.add_parser('keys', help='Generate key pairs and certificates/certificate signing requests')
 generate_key_subparsers = generate_key_parser.add_subparsers(title='subcommand', dest='manage_certs_subcommand', metavar='SUBCOMMAND', required=True)
@@ -793,8 +792,6 @@ match args.command:
         if args.puk:
             what = 'PUK'
             pin_id = 0x81
-        elif args.global_pin:
-            raise NotImplementedError()
         else:
             what = 'PIN'
             pin_id = 0x80
