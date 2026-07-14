@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey,
     EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization.base import load_der_private_key
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.hazmat.primitives.hashes import SHA1, SHA224, SHA256, SHA384, SHA512, HashAlgorithm
 from cryptography.exceptions import InvalidSignature
 from cryptography.utils import int_to_bytes
@@ -338,9 +339,12 @@ def make_self_signed(scp: scp03.SCP03, key_id: bytes, algo: str, args: argparse.
     # Make or get the public key
     if existing_pubkey is not None:
         pubkey_x509, _ = der_decoder.decode(existing_pubkey, asn1Spec=asn1_x509.SubjectPublicKeyInfo())
+        # parse the Any value since PyASN1 doesn't want to parse by itself (bug #116 on the PyASN1 GitHub)
+        pubkey_x509['algorithm']['parameters'], _ = der_decoder.decode(pubkey_x509['algorithm']['parameters'])
+
         if algo.startswith('rsa'):
             assert pubkey_x509['algorithm']['algorithm'] == asn1_x509.oids['rsaEncryption']
-            assert pubkey_x509['algorithm']['parameters'].isNoValue()
+            assert isinstance(pubkey_x509['algorithm']['parameters'], Null)
         elif algo.startswith('ecc'):
             assert pubkey_x509['algorithm']['algorithm'] == asn1_x509.oids['ecPublicKey']
             if algo == 'ecc256':
@@ -877,12 +881,16 @@ match args.command:
                         key: EllipticCurvePrivateKey = load_private_key(key_data)
                         assert isinstance(key, EllipticCurvePrivateKey)
                         if length == '256':
-                            assert key.curve == SECP256R1
+                            assert isinstance(key.curve, SECP256R1)
                         elif length == '384':
-                            assert key.curve == SECP384R1
+                            assert isinstance(key.curve, SECP384R1)
                         else:
                             raise ValueError(f'Invalid ECC key size {length}')
-                        raise NotImplementedError()
+                        numbers = key.private_numbers()
+                        pubkey = key.public_key()
+                        pubkey_x962 = pubkey.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+                        reqs.append(change_key_req(eccS=int_to_bytes(numbers.private_value)))
+                        reqs.append(change_key_req(eccW=pubkey_x962))
 
                     case (algo_name, length):  # symmetric key algos
                         reqs.append(change_key_req(key=key_data))

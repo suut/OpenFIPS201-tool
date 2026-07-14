@@ -3,16 +3,22 @@
 from dataclasses import dataclass
 
 from pyasn1.type.univ import *
+from pyasn1.type.opentype import *
 from pyasn1.type.tag import *
 from pyasn1.type.namedtype import *
 from pyasn1.type.base import *
 from pyasn1.type.namedval import *
-from pyasn1.codec.ber import encoder as ber_encoder
+
+
+@dataclass
+class DefinedBy:
+    defined_by: str
+    mapping: dict
 
 
 @dataclass
 class Optional:
-    t: Asn1Type
+    t: Asn1Type|DefinedBy
 
 
 def tagCtx(t, n, constructed=False):
@@ -31,7 +37,20 @@ def tagSetApp(t, n, constructed=False):
     return t.tagSet.tagImplicitly(Tag(tagClassApplication, tagFormatConstructed if constructed else tagFormatSimple, n))
 
 def components(d):
-    return NamedTypes(*(OptionalNamedType(k, v.t) if isinstance(v, Optional) else NamedType(k, v) for k, v in d.items()),)
+    items = []
+    for k, v in d.items():
+        kw = {}
+        if isinstance(v, Optional):
+            v = v.t
+            T = OptionalNamedType
+        else:
+            T = NamedType
+        if isinstance(v, DefinedBy):
+            kw['openType'] = OpenType(v.defined_by, v.mapping)
+            v = Any()
+        items.append(T(k, v, **kw))
+
+    return NamedTypes(*items)
 
 def values(d):
     return NamedValues(*d.items(),)

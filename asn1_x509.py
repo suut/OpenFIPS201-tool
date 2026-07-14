@@ -8,7 +8,64 @@ from pyasn1.type.useful import *
 from pyasn1.type.univ import ObjectIdentifier
 from pyasn1.codec.der import encoder as der_encoder
 
-from asn1_utils import components, values, tagApp, tagCtx, tagSetApp, Optional, tagCtxExplicit
+from asn1_utils import components, values, tagApp, tagCtx, tagSetApp, Optional, tagCtxExplicit, DefinedBy
+
+
+oids = {
+    'sha1-with-rsa-signature': ObjectIdentifier('1.2.840.113549.1.1.5'),
+    'sha224WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.14'),
+    'sha256WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.11'),
+    'sha384WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.12'),
+    'sha512WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.13'),
+    'ecdsa-with-SHA1': ObjectIdentifier('1.2.840.10045.4.1'),
+    'ecdsa-with-SHA224': ObjectIdentifier('1.2.840.10045.4.3.1'),
+    'ecdsa-with-SHA256': ObjectIdentifier('1.2.840.10045.4.3.2'),
+    'ecdsa-with-SHA384': ObjectIdentifier('1.2.840.10045.4.3.3'),
+    'ecdsa-with-SHA512': ObjectIdentifier('1.2.840.10045.4.3.4'),
+    'rsaEncryption': ObjectIdentifier('1.2.840.113549.1.1.1'),
+    'commonName': ObjectIdentifier('2.5.4.3'),
+    'serialNumber': ObjectIdentifier('2.5.4.5'),
+    'countryName': ObjectIdentifier('2.5.4.6'),
+    'localityName': ObjectIdentifier('2.5.4.7'),
+    'stateOrProvinceName': ObjectIdentifier('2.5.4.8'),
+    'streetAddress': ObjectIdentifier('2.5.4.9'),
+    'organizationName': ObjectIdentifier('2.5.4.10'),
+    'organizationalUnitName': ObjectIdentifier('2.5.4.11'),
+    'emailAddress': ObjectIdentifier('1.2.840.113549.1.9.1'),
+    'ecPublicKey': ObjectIdentifier('1.2.840.10045.2.1'),
+    'prime256v1': ObjectIdentifier('1.2.840.10045.3.1.7'),
+    'ansip384r1': ObjectIdentifier('1.3.132.0.34'),
+    'authorityKeyIdentifier': ObjectIdentifier('2.5.29.35'),
+    'subjectKeyIdentifier': ObjectIdentifier('2.5.29.14'),
+    'keyUsage': ObjectIdentifier('2.5.29.15'),
+    'extKeyUsage': ObjectIdentifier('2.5.29.37'),
+    'subjectAltName': ObjectIdentifier('2.5.29.17'),
+    'basicConstraints': ObjectIdentifier('2.5.29.19'),
+    'anyExtendedKeyUsage': ObjectIdentifier('2.5.29.37.0'),
+    'id-kp-serverAuth': ObjectIdentifier('1.3.6.1.5.5.7.3.1'),
+    'id-kp-clientAuth': ObjectIdentifier('1.3.6.1.5.5.7.3.2'),
+    'id-kp-codeSigning': ObjectIdentifier('1.3.6.1.5.5.7.3.3'),
+    'id-kp-emailProtection': ObjectIdentifier('1.3.6.1.5.5.7.3.4'),
+    'id-kp-timeStamping': ObjectIdentifier('1.3.6.1.5.5.7.3.8'),
+    'id-kp-OCSPSigning': ObjectIdentifier('1.3.6.1.5.5.7.3.9'),
+}
+
+rsa_signature_oids_by_digest = {
+    'sha1': oids['sha1-with-rsa-signature'],
+    'sha224': oids['sha224WithRSAEncryption'],
+    'sha256': oids['sha256WithRSAEncryption'],
+    'sha384': oids['sha384WithRSAEncryption'],
+    'sha512': oids['sha512WithRSAEncryption']
+}
+
+ecdsa_signature_oids_by_digest = {
+    'sha1': oids['ecdsa-with-SHA1'],
+    'sha224': oids['ecdsa-with-SHA224'],
+    'sha256': oids['ecdsa-with-SHA256'],
+    'sha384': oids['ecdsa-with-SHA384'],
+    'sha512': oids['ecdsa-with-SHA512']
+}
+
 
 class DirectoryString(Choice):
     componentType = components({
@@ -59,6 +116,16 @@ class GeneralName(Choice):
 
 class GeneralNames(SequenceOf):
     componentType = GeneralName()
+
+# OpenType doesn't work yet (see bug #116 on the PyASN1 GitHub)
+# class AlgorithmIdentifier(Sequence):
+#     componentType = components({
+#         'algorithm': ObjectIdentifier(),
+#         'parameters': Optional(DefinedBy('algorithm', {
+#             der_encoder.encode(oids['rsaEncryption']): ObjectIdentifier(),
+#             der_encoder.encode(oids['ecPublicKey']): ObjectIdentifier()
+#         }))
+#     })
 
 class AlgorithmIdentifier(Sequence):
     componentType = components({
@@ -228,59 +295,3 @@ def make_utctime(time: datetime.datetime, yeardigits=2) -> UTCTime:
     else:
         raise ValueError('Either 2 or 4 digits for the year')
     return UTCTime(time.astimezone(datetime.timezone.utc).strftime(fmt))
-
-
-oids = {
-    'sha1-with-rsa-signature': ObjectIdentifier('1.2.840.113549.1.1.5'),
-    'sha224WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.14'),
-    'sha256WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.11'),
-    'sha384WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.12'),
-    'sha512WithRSAEncryption': ObjectIdentifier('1.2.840.113549.1.1.13'),
-    'ecdsa-with-SHA1': ObjectIdentifier('1.2.840.10045.4.1'),
-    'ecdsa-with-SHA224': ObjectIdentifier('1.2.840.10045.4.3.1'),
-    'ecdsa-with-SHA256': ObjectIdentifier('1.2.840.10045.4.3.2'),
-    'ecdsa-with-SHA384': ObjectIdentifier('1.2.840.10045.4.3.3'),
-    'ecdsa-with-SHA512': ObjectIdentifier('1.2.840.10045.4.3.4'),
-    'rsaEncryption': ObjectIdentifier('1.2.840.113549.1.1.1'),
-    'commonName': ObjectIdentifier('2.5.4.3'),
-    'serialNumber': ObjectIdentifier('2.5.4.5'),
-    'countryName': ObjectIdentifier('2.5.4.6'),
-    'localityName': ObjectIdentifier('2.5.4.7'),
-    'stateOrProvinceName': ObjectIdentifier('2.5.4.8'),
-    'streetAddress': ObjectIdentifier('2.5.4.9'),
-    'organizationName': ObjectIdentifier('2.5.4.10'),
-    'organizationalUnitName': ObjectIdentifier('2.5.4.11'),
-    'emailAddress': ObjectIdentifier('1.2.840.113549.1.9.1'),
-    'ecPublicKey': ObjectIdentifier('1.2.840.10045.2.1'),
-    'prime256v1': ObjectIdentifier('1.2.840.10045.3.1.7'),
-    'ansip384r1': ObjectIdentifier('1.3.132.0.34'),
-    'authorityKeyIdentifier': ObjectIdentifier('2.5.29.35'),
-    'subjectKeyIdentifier': ObjectIdentifier('2.5.29.14'),
-    'keyUsage': ObjectIdentifier('2.5.29.15'),
-    'extKeyUsage': ObjectIdentifier('2.5.29.37'),
-    'subjectAltName': ObjectIdentifier('2.5.29.17'),
-    'basicConstraints': ObjectIdentifier('2.5.29.19'),
-    'anyExtendedKeyUsage': ObjectIdentifier('2.5.29.37.0'),
-    'id-kp-serverAuth': ObjectIdentifier('1.3.6.1.5.5.7.3.1'),
-    'id-kp-clientAuth': ObjectIdentifier('1.3.6.1.5.5.7.3.2'),
-    'id-kp-codeSigning': ObjectIdentifier('1.3.6.1.5.5.7.3.3'),
-    'id-kp-emailProtection': ObjectIdentifier('1.3.6.1.5.5.7.3.4'),
-    'id-kp-timeStamping': ObjectIdentifier('1.3.6.1.5.5.7.3.8'),
-    'id-kp-OCSPSigning': ObjectIdentifier('1.3.6.1.5.5.7.3.9'),
-}
-
-rsa_signature_oids_by_digest = {
-    'sha1': oids['sha1-with-rsa-signature'],
-    'sha224': oids['sha224WithRSAEncryption'],
-    'sha256': oids['sha256WithRSAEncryption'],
-    'sha384': oids['sha384WithRSAEncryption'],
-    'sha512': oids['sha512WithRSAEncryption']
-}
-
-ecdsa_signature_oids_by_digest = {
-    'sha1': oids['ecdsa-with-SHA1'],
-    'sha224': oids['ecdsa-with-SHA224'],
-    'sha256': oids['ecdsa-with-SHA256'],
-    'sha384': oids['ecdsa-with-SHA384'],
-    'sha512': oids['ecdsa-with-SHA512']
-}

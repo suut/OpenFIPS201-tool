@@ -9,5 +9,8 @@ __pycache__/
 *.csr
 *.cer
 *.bin
+*.pk8
+*.p8
+*.pfx
 
 /.idea/
