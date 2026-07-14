@@ -183,8 +183,6 @@ def load_cert(scp: scp03.SCP03, key_id: bytes, data: bytes, compress=True):
 
     send_with_chaining(scp, [0x00, 0xDB, 0x3F, 0xFF], payload)
 
-    print('Success')
-
 
 def get_cryptography_hash(hash_function: Callable[[...], Any]) -> HashAlgorithm:
     if hash_function is hashlib.sha1:
@@ -643,14 +641,14 @@ generate_key_subparsers = generate_key_parser.add_subparsers(title='subcommand',
 
 make_keypair_parser = generate_key_subparsers.add_parser('make-keypair-only', help='Make a keypair and save the public key')
 make_keypair_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
-make_keypair_parser.add_argument('-a', '--algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), default='rsa2048', help='The public-key algorithm to use (default %(default)s)')
+make_keypair_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
 make_keypair_parser.add_argument('-o', '--output', default='card-{KEY_ID}.key', help='Where to save the the public key (default %(default)s)', metavar='FILE')
 
 make_self_signed_parser = generate_key_subparsers.add_parser('make-self-signed', help='Make a self-signed certificate')
 make_self_signed_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
+make_self_signed_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
 make_self_signed_parser.add_argument('--with-key', help='Use the public key that was previously imported or generated with make-keypair-only', metavar='PUBKEY')
 make_self_signed_parser.add_argument('--no-load', action='store_true', help='Do not automatically load the certificate into the card')
-make_self_signed_parser.add_argument('-a', '--algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), default='rsa2048', help='The public-key algorithm to use (default %(default)s)')
 make_self_signed_parser.add_argument('-o', '--output', default='card-{KEY_ID}.crt', help='Where to save the self-signed certificate (default %(default)s)', metavar='FILE')
 make_self_signed_parser.add_argument('--common-name', default='PIV certificate {KEY_ID}', help='Certificate common name (default "%(default)s")', metavar='NAME')
 make_self_signed_parser.add_argument('--email', action='append', help='Email address, can be given multiple times', metavar='EMAIL')
@@ -674,8 +672,8 @@ digest_group.add_argument('--sha512', dest='digest', action='store_const', const
 
 make_csr_parser = generate_key_subparsers.add_parser('make-csr', help='Make a certificate signing request intended to be signed by an external CA')
 make_csr_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
+make_csr_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
 make_csr_parser.add_argument('--with-key', help='Use the public key that was previously generated with make-keypair-only', metavar='PUBKEY')
-make_csr_parser.add_argument('-a', '--algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), default='rsa2048', help='The public-key algorithm to use (default %(default)s)')
 make_csr_parser.add_argument('-o', '--output', default='card-{KEY_ID}.csr', help='Where to save the certificate signing request (default %(default)s)', metavar='FILE')
 
 load_cert_parser = generate_key_subparsers.add_parser('load-cert', help='Load a certificate')
@@ -691,7 +689,7 @@ import_key_parser.add_argument('key', help='The file from which to read the key'
 
 clear_key_parser = generate_key_subparsers.add_parser('clear', help='Clear a private or secret key')
 clear_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
-clear_key_parser.add_argument('algo', choices=('tdea192', 'rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'aes128', 'aes192', 'aes256', 'ecc256', 'ecc384', 'cs2', 'cs7'), help='The key algorithm (choices are %(choices)s)')
+clear_key_parser.add_argument('algo', choices=('tdea192', 'rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'aes128', 'aes192', 'aes256', 'ecc256', 'ecc384', 'cs2', 'cs7'), help='The key algorithm (choices are %(choices)s)', metavar='ALGO')
 
 secure_applet_parser = subparsers.add_parser('secure-applet', help='Set the applet state to SECURED and prevent further admin commands')
 
@@ -820,7 +818,7 @@ match args.command:
                     sys.exit(f'Directory {output.parent} does not exist')
                 pubkey_x509 = create_keypair(scp, key_id, args.algo)
                 Path(output).write_bytes(der_encoder.encode(pubkey_x509))
-                print('Success')
+                print('Success, key written to', output)
 
             case 'make-self-signed':
                 output = Path(args.output.format(KEY_ID=key_id.hex().upper()))
@@ -833,7 +831,8 @@ match args.command:
                 output.write_bytes(cert)
                 if not args.no_load:
                     load_cert(scp, key_id, cert)
-                print('Success')
+                    print('Certificate loaded successfully')
+                print('Success, certificate written to', output)
 
             case 'make-csr':
                 output = Path(args.output.format(KEY_ID=key_id.hex().upper()))
@@ -844,13 +843,14 @@ match args.command:
                     existing_pubkey = load_pem_or_raw(Path(args.with_key).read_bytes())
                 csr = make_csr(scp, key_id, args.algo, existing_pubkey)
                 Path(output).write_bytes(der_encoder.encode(csr))
-                print('Success')
+                print('Success, CSR written to', output)
 
             case 'load-cert':
                 cert = Path(args.cert)
                 if not cert.exists():
                     sys.exit('Certificate file does not exist')
                 load_cert(scp, key_id, load_pem_or_raw(Path(args.cert).read_bytes()), compress=not args.no_compression)
+                print('Certificate loaded successfully')
 
             case 'import':
                 key_data = load_pem_or_raw(Path(args.key).read_bytes())

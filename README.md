@@ -10,6 +10,7 @@ All commands are sent on the GlobalPlatform SCP03 secure channel, with command a
 |--------------------------------------|-----------------------|
 | Create initial structure             | Done (1)              |
 | Create key slot                      | Done                  |
+| Load arbitrary config file           | Done                  |
 | Set PIN and PUK                      | Done                  |
 | Set admin key `9B`                   | Done                  |
 | Generate asymmetric key pair         | Done                  |
