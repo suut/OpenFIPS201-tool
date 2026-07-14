@@ -2,18 +2,17 @@
 
 import sys
 import argparse
-from functools import partial
+import getpass
 import re
 from pathlib import Path
 import hashlib
 import base64
 import random
+import gzip
 from datetime import datetime, timedelta
 from typing import Callable, Any
 
 import yaml
-from cryptography.utils import int_to_bytes
-from pyasn1.type.base import Asn1Item, Asn1Type
 
 from smartcard.System import readers as readers
 from smartcard.reader.Reader import Reader
@@ -28,11 +27,11 @@ from pyasn1.type.univ import BitString, Integer, ObjectIdentifier, Null
 import pkcs1
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey, ECDSA, SECP256R1, SECP384R1, \
     EllipticCurvePrivateKey
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, rsa_crt_dmp1, rsa_crt_dmq1, rsa_crt_iqmp, \
-    RSAPublicKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization.base import load_der_private_key
 from cryptography.hazmat.primitives.hashes import SHA1, SHA224, SHA256, SHA384, SHA512, HashAlgorithm
 from cryptography.exceptions import InvalidSignature
+from cryptography.utils import int_to_bytes
 
 import asn1_utils
 import scp03
@@ -92,6 +91,17 @@ def set_admin_key(scp, admin_key, algo):
                  ber_encoder.encode(put_key_req, defMode=True))
 
 
+def load_private_key(key_data: bytes):
+    try:
+        return load_der_private_key(key_data, None)
+    except TypeError:  # key has a password
+        pw = getpass.getpass('Enter private key encryption password: ')
+        try:
+            return load_der_private_key(key_data, pw.encode('utf-8'))
+        except ValueError:
+            sys.exit('Invalid password, could not decrypt key')
+
+
 cert_by_key = {
     x('9A'): x('5FC105'),
     x('9C'): x('5FC10A'),
@@ -119,7 +129,7 @@ cert_by_key = {
     x('95'): x('5FC120'),
 }
 
-def load_pem_der(data):
+def load_pem_or_raw(data):
     if data.startswith(b'-----BEGIN'):  # we have PEM
         end_of_start_label = data.index(b'-----', 10) + 5
         start_of_end_label = data.index(b'-----END', end_of_start_label)
@@ -128,7 +138,7 @@ def load_pem_der(data):
     return data
 
 
-def send_with_chaining(header: bytes|list, req: bytes):
+def send_with_chaining(scp: scp03.SCP03, header: bytes|list, req: bytes):
     header = bytearray(header)
 
     apdus = []
@@ -149,13 +159,20 @@ def send_with_chaining(header: bytes|list, req: bytes):
     return resp
 
 
-def load_cert(scp: scp03.SCP03, key_id: bytes, data: bytes):
+def change_reference_data(scp: scp03.SCP03, algo: str, key_id: bytes, data: bytes):
+    send_with_chaining(scp, [0x00, 0x24, asn1_put_data_v2.KeyMechanism.namedValues[algo], *key_id], data)
+
+
+def load_cert(scp: scp03.SCP03, key_id: bytes, data: bytes, compress=True):
     if key_id not in cert_by_key:
         sys.exit('Invalid key ID')
 
+    if compress:
+        data = gzip.compress(data)
+
     cert_data = bytearray()
     cert_data += asn1_utils.encode_unstructured(0x70, data)
-    cert_data += asn1_utils.encode_unstructured(0x71, b'\x00')  # CertInfo: not compressed
+    cert_data += asn1_utils.encode_unstructured(0x71, b'\x01' if compress else b'\x00')  # CertInfo: not compressed
     cert_data += asn1_utils.encode_unstructured(0xFE, b'')      # LRC
 
     tag_list_field = asn1_utils.encode_unstructured(0x5C, cert_by_key[key_id])
@@ -163,20 +180,7 @@ def load_cert(scp: scp03.SCP03, key_id: bytes, data: bytes):
 
     payload = tag_list_field + data_field
 
-    apdus = []
-    total_blocks = (len(payload) + 223) // 224
-
-    for i in range(total_blocks):
-        if i < total_blocks - 1:
-            cla = 0x10
-        else:
-            cla = 0x00  # last block
-
-        header = bytes([cla, 0xDB, 0x3F, 0xFF])
-        apdus.append((header, payload[224 * i:224 * (i + 1)]))
-
-    for header, apdu in apdus:
-        scp.transmit(header, apdu)
+    send_with_chaining(scp, [0x00, 0xDB, 0x3F, 0xFF], payload)
 
     print('Success')
 
@@ -336,7 +340,7 @@ def make_self_signed(scp: scp03.SCP03, key_id: bytes, algo: str, args: argparse.
         pubkey_x509, _ = der_decoder.decode(existing_pubkey, asn1Spec=asn1_x509.SubjectPublicKeyInfo())
         if algo.startswith('rsa'):
             assert pubkey_x509['algorithm']['algorithm'] == asn1_x509.oids['rsaEncryption']
-            assert not pubkey_x509['algorithm']['parameters'].isSameTypeWith(Null())
+            assert pubkey_x509['algorithm']['parameters'].isNoValue()
         elif algo.startswith('ecc'):
             assert pubkey_x509['algorithm']['algorithm'] == asn1_x509.oids['ecPublicKey']
             if algo == 'ecc256':
@@ -583,10 +587,6 @@ def split_algo(algo):
     return x, y
 
 
-def int_to_bytes(n: int) -> bytes:
-    return n.to_bytes((n.bit_length() + 7) // 8)
-
-
 def change_key_req(**kw):
     assert len(kw) == 1
     req = asn1_change_reference_data_v2.ChangeReferenceDataKeyRequest()
@@ -678,12 +678,13 @@ make_csr_parser.add_argument('-o', '--output', default='card-{KEY_ID}.csr', help
 load_cert_parser = generate_key_subparsers.add_parser('load-cert', help='Load a certificate')
 load_cert_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
 load_cert_parser.add_argument('cert', help='Certificate', metavar='CERT')
+load_cert_parser.add_argument('--no-compression', action='store_true', help='Do not use GZIP compression')
 
 import_key_parser = generate_key_subparsers.add_parser('import', help='Import a private or secret key')
 import_key_parser.add_argument('--no-rsa-crt', action='store_true', help='Do not use RSA CRT for RSA keys')
 import_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
-import_key_parser.add_argument('algo', choices=('tdea192', 'rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'aes128', 'aes192', 'aes256', 'ecc256', 'ecc384', 'cs2', 'cs7'), help='The key algorithm (choices are %(choices)s)')
-import_key_parser.add_argument('key', default='-', nargs='?', help='The file from which to read the key (default: read from stdin)', metavar='KEY')
+import_key_parser.add_argument('algo', choices=('tdea192', 'rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'aes128', 'aes192', 'aes256', 'ecc256', 'ecc384', 'cs2', 'cs7'), help='The key algorithm (choices are %(choices)s)', metavar='ALGO')
+import_key_parser.add_argument('key', help='The file from which to read the key', metavar='KEY')
 
 clear_key_parser = generate_key_subparsers.add_parser('clear', help='Clear a private or secret key')
 clear_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
@@ -719,8 +720,8 @@ match args.command:
         puk: bytes = args.puk.encode('ascii')
 
         set_config(scp, CONFIG_DIR / 'initial_setup_1.yaml', bulk=True, admin_key_algo=args.admin_key_algo)
-        set_config(scp, CONFIG_DIR / 'initial_setup_2.yaml', bulk=True)
-        set_config(scp, CONFIG_DIR / 'initial_setup_3.yaml', bulk=True)
+        set_config(scp, CONFIG_DIR / 'initial_setup_2.yaml', bulk=True, admin_key_algo=args.admin_key_algo)
+        set_config(scp, CONFIG_DIR / 'initial_setup_3.yaml', bulk=True, admin_key_algo=args.admin_key_algo)
         set_config(scp, CONFIG_DIR / 'update_config.yaml')
 
         # Set PIN
@@ -826,7 +827,7 @@ match args.command:
                     sys.exit(f'Directory {output.parent} does not exist')
                 existing_pubkey = None
                 if args.with_key is not None:
-                    existing_pubkey = load_pem_der(Path(args.with_key).read_bytes())
+                    existing_pubkey = load_pem_or_raw(Path(args.with_key).read_bytes())
                 cert = make_self_signed(scp, key_id, args.algo, args, existing_pubkey)
                 output.write_bytes(cert)
                 if not args.no_load:
@@ -839,7 +840,7 @@ match args.command:
                     sys.exit(f'Directory {output.parent} does not exist')
                 existing_pubkey = None
                 if args.with_key is not None:
-                    existing_pubkey = load_pem_der(Path(args.with_key).read_bytes())
+                    existing_pubkey = load_pem_or_raw(Path(args.with_key).read_bytes())
                 csr = make_csr(scp, key_id, args.algo, existing_pubkey)
                 Path(output).write_bytes(der_encoder.encode(csr))
                 print('Success')
@@ -848,33 +849,32 @@ match args.command:
                 cert = Path(args.cert)
                 if not cert.exists():
                     sys.exit('Certificate file does not exist')
-                load_cert(scp, key_id, load_pem_der(Path(args.cert).read_bytes()))
+                load_cert(scp, key_id, load_pem_or_raw(Path(args.cert).read_bytes()), compress=not args.no_compression)
 
             case 'import':
-                key_data = load_pem_der(Path(args.key).read_bytes() if args.key != '-' else sys.stdin.buffer.read())
+                key_data = load_pem_or_raw(Path(args.key).read_bytes())
 
                 reqs = []
 
                 match split_algo(args.algo):
                     case ('rsa', length):
-                        rsa_length = int(length) // 8
-                        key: RSAPrivateKey = load_der_private_key(key_data, None)
+                        key: RSAPrivateKey = load_private_key(key_data)
                         assert isinstance(key, RSAPrivateKey)
                         numbers = key.private_numbers()
-                        assert numbers.public_numbers.n.bit_length() == 8*rsa_length
+                        assert numbers.public_numbers.n.bit_length() == int(length)
                         reqs.append(change_key_req(rsaN=int_to_bytes(numbers.public_numbers.n)))
                         reqs.append(change_key_req(rsaE=int_to_bytes(numbers.public_numbers.e)))
                         if not args.no_rsa_crt:
-                            reqs.append(change_key_req(rsaDP=int_to_bytes(rsa_crt_dmp1(numbers.d, numbers.p))))
-                            reqs.append(change_key_req(rsaDQ=int_to_bytes(rsa_crt_dmq1(numbers.d, numbers.q))))
-                            reqs.append(change_key_req(rsaPQ=int_to_bytes(rsa_crt_iqmp(numbers.p, numbers.q))))
+                            reqs.append(change_key_req(rsaDP=int_to_bytes(numbers.dmp1)))
+                            reqs.append(change_key_req(rsaDQ=int_to_bytes(numbers.dmq1)))
+                            reqs.append(change_key_req(rsaPQ=int_to_bytes(numbers.iqmp)))
                             reqs.append(change_key_req(rsaP=int_to_bytes(numbers.p)))
                             reqs.append(change_key_req(rsaQ=int_to_bytes(numbers.q)))
                         else:
                             reqs.append(change_key_req(rsaD=int_to_bytes(numbers.d)))
 
                     case ('ecc', length):
-                        key: EllipticCurvePrivateKey = load_der_private_key(key_data, None)
+                        key: EllipticCurvePrivateKey = load_private_key(key_data)
                         assert isinstance(key, EllipticCurvePrivateKey)
                         if length == '256':
                             assert key.curve == SECP256R1
@@ -887,18 +887,19 @@ match args.command:
                     case (algo_name, length):  # symmetric key algos
                         reqs.append(change_key_req(key=key_data))
 
-                for req in reqs:
-                    print(der_decoder.decode(req, asn1Spec=asn1_change_reference_data_v2.ChangeReferenceDataKeyRequest())[0])
-                    send_with_chaining([0x00, 0x24, asn1_put_data_v2.KeyMechanism.namedValues[args.algo], *key_id], req)
+                try:
+                    for req in reqs:
+                        change_reference_data(scp, args.algo, key_id, req)
+                except scp03.APDUException as e:
+                    if e.sw == scp03.SW_CONDITIONS_NOT_SATISFIED:
+                        sys.exit('Error: key already imported, clear it first')
+                    else:
+                        raise e from None
 
                 print('Success')
 
             case 'clear':
-                req = asn1_change_reference_data_v2.ChangeReferenceDataKeyRequest()
-                req['clear'] = None
-
-                scp.transmit([0x00, 0x24, asn1_put_data_v2.KeyMechanism.namedValues[args.algo], *key_id],
-                             ber_encoder.encode(req, defMode=True))
+                change_reference_data(scp, args.algo, key_id, change_key_req(clear=None))
 
     case 'set-config':
         if args.bulk:
