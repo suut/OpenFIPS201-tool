@@ -1,0 +1,60 @@
+# The setup is split in 3 parts because PUT DATA ADMIN does not support chaining
+
+- createKeyRequest:
+    id: !x "9B"
+    modeContact: "always"
+    modeContactless: "always"
+    keyMechanism: !var "admin_key_algo"
+    keyRole: "authenticate"
+    keyAttribute: !x "18"  # importable | permitMutual
+- createVerifierRequest:
+    id: !x "80"  # PIN
+    modeContact: "always"
+    modeContactless: "always"
+    minLength: 4
+    maxLength: 8
+    retriesContact: 3
+    retriesContactless: 3
+- createVerifierRequest:
+    id: !x "81"  # PUK
+    modeContact: "always"
+    modeContactless: "always"
+    minLength: 8
+    maxLength: 8
+    retriesContact: 9
+    retriesContactless: 9
+- createObjectRequest:
+    id: !x "5FC107"  # Card Capability Container
+    modeContact: "always"
+    modeContactless: "never"
+    adminKey: !x "9B"
+- createObjectRequest:
+    id: !x "5FC102"  # Cardholder Unique Identifier
+    modeContact: "always"
+    modeContactless: "always"
+    adminKey: !x "9B"
+- createObjectRequest:
+    id: !x "5FC105"  # X509 Certificate for PIV Authentication
+    modeContact: "always"
+    modeContactless: "never"
+    adminKey: !x "9B"
+- createObjectRequest:
+    id: !x "5FC101"  # X509 Certificate for Card Authentication
+    modeContact: "always"
+    modeContactless: "always"
+    adminKey: !x "9B"
+- createObjectRequest:
+    id: !x "5FC103"  # Cardholder Fingerprints
+    modeContact: "always"
+    modeContactless: "never"
+    adminKey: !x "9B"
+- createObjectRequest:
+    id: !x "5FC108"  # Cardholder Facial Image
+    modeContact: "always"
+    modeContactless: "never"
+    adminKey: !x "9B"
+- createObjectRequest:
+    id: !x "5FC106"  # Security Object
+    modeContact: "always"
+    modeContactless: "never"
+    adminKey: !x "9B"

@@ -1,0 +1,8 @@
+# All parameters are optional
+
+updateConfigRequest:
+  restrictContactlessGlobal: false
+  restrictContactlessAdmin: false
+  restrictEnumeration: false
+  restrictRandom: false
+  vciCompatibilityMode: false

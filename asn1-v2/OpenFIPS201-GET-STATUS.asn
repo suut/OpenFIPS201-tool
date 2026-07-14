@@ -1,0 +1,30 @@
+OpenFIPS201-GET-STATUS-Schema DEFINITIONS IMPLICIT TAGS ::= 
+BEGIN
+
+AppletState ::= ENUMERATED {
+  installed   (3),
+  selectable  (7),
+  secured     (15),
+  locked      (128)
+}
+
+OperatorRole ::= ENUMERATED {
+  public          (0),
+  user            (1),
+  securityOfficer (2),
+  keyHolder       (3),
+  admin           (4)
+}
+
+GetStatusResponse ::= [APPLICATION 19] SEQUENCE {
+	appletState		  [0] AppletState,
+  operatorRole    [1] OperatorRole,
+  operatorId      [2] INTEGER (0..255),
+	pinAlways		    [3] BOOLEAN,
+	smState			    [4] BOOLEAN,
+	vciState		    [5] BOOLEAN,
+	contactlessAcl  [6] BOOLEAN,
+	fipsMode		    [7] BOOLEAN
+}
+
+END

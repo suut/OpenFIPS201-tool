@@ -1,0 +1,8 @@
+createKeyRequest:
+  id: !var "key_id"
+  modeContact: !var "mode_contact"
+  modeContactless: !var "mode_contactless"
+  keyRole: !var "role"
+  keyMechanism: !var "algo"
+  keyAdmin: !var "admin_key"
+  keyAttribute: !var "attr"

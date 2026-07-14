@@ -1,0 +1,177 @@
+--<OSS.PDU OpenFIPS201-PUT-DATA-ADMIN-Schema.PutDataRequest>--
+OpenFIPS201-PUT-DATA-ADMIN-Schema DEFINITIONS IMPLICIT TAGS ::= 
+BEGIN
+
+PutDataRequest ::= CHOICE {
+	createContainerRequest [APPLICATION 4] PutDataCreateObjectRequest,
+	createVerifierRequest  [APPLICATION 5] PutDataCreateVerifierRequest,
+	createKeyRequest 	   [APPLICATION 6] PutDataCreateKeyRequest,
+	updateConfigRequest	   [APPLICATION 8] PutDataUpdateConfigRequest,
+
+	secureRequest        [APPLICATION 31] NULL
+}
+
+PutDataBulkRequest ::= [APPLICATION 10] SEQUENCE OF PutDataRequest
+
+PutDataCreateObjectRequest ::= SEQUENCE {
+  id        [11] OCTET STRING (SIZE(1..3)),
+  modeContact   [12] AccessMode,
+  modeContactless [13] AccessMode,
+  adminKey    [17] OCTET STRING (SIZE(1)) OPTIONAL
+}
+
+PutDataCreateVerifierRequest ::= SEQUENCE {
+  id        [11] OCTET STRING (SIZE(1)),
+  modeContact   [12] AccessMode,
+  modeContactless [13] AccessMode,
+  minLength [14] INTEGER(4..16),
+  maxLength [15] INTEGER(4..16),
+  retriesContact [16] INTEGER (0..15),
+  retriesContactless [17] INTEGER (0..15),
+  ruleCharset [18] PinCharSet OPTIONAL,
+  ruleHistory [19] INTEGER (0..12) OPTIONAL,
+  ruleSequence [20] INTEGER (0..16) OPTIONAL,
+  ruleRepeat [21] INTEGER (0..16) OPTIONAL,
+  restrictUpdate [22] BOOLEAN OPTIONAL
+}
+
+PutDataCreateKeyRequest ::= SEQUENCE {
+	id				[11] OCTET STRING (SIZE(1)),
+
+	modeContact		[12] AccessMode,
+	modeContactless	[13] AccessMode,
+	keyAdmin		[17] OCTET STRING (SIZE(1)) OPTIONAL,
+
+	keyMechanism	[14] KeyMechanism,
+	keyRole			[15] KeyRole,
+	keyAttribute	[16] OCTET STRING (SIZE(1))
+}
+
+PutDataUpdateConfigRequest ::= SEQUENCE {
+	-- If set to TRUE, the applet may not be selected over the contactless interface
+	restrictContactlessGlobal	[0] BOOLEAN OPTIONAL,
+
+	-- If set to TRUE, admin functions are disabled over the contactless interface 
+	restrictContactlessAdmin	[1] BOOLEAN OPTIONAL,
+
+	-- If TRUE, object listing functionality is disabled
+	restrictEnumeration			[2] BOOLEAN OPTIONAL,
+
+	-- If TRUE, requesting randomness is disabled
+	restrictRandom				[3] BOOLEAN OPTIONAL,
+
+	-- If TRUE, VCI compatibility mode (FIPS 140-2) is enabled
+	vciCompatibilityMode		[4] BOOLEAN OPTIONAL
+}
+
+
+AccessMode ::= ENUMERATED {
+	-- This object may never be accessed (typically used for restricting contactless)
+	never		(0),
+
+	-- PIN verification can be used to access this object
+	pin			(1),  
+	
+	-- PIN verification must immediately precede every access to this object
+	pinAlways	(2),
+	
+	-- This object may be accessed without any verification (free access, clobbers lower 5 bits).
+	always	(31),
+
+    -- The object requires secure messaging to be true
+	sm			(64),	
+	
+    -- The object requires secure messaging AND the VCI condition to be true
+	vci			(96),	
+
+    -- The object may be managed to by a cardholder who has satisfied the access conditions
+	userAdmin	(-128)
+}
+
+KeyRole ::= ENUMERATED {
+
+	undefined	(0),
+
+	-- This key can be used for card/host authentication
+	--   SYM: Supported for all types
+	--   RSA: Not supported (RSA authentication is just signing)
+	--   ECC: Not supported (ECC authentication is just signing)
+	--    SM: Not supported
+	authenticate	(1),
+	
+	-- This key can be used for key establishment schemes
+	--   SYM: Not supported
+	--   RSA: RSA Key Management (decryption)
+	--   ECC: ECDH
+	--   SM: Opacity ZKM
+	keyEstablish	(2),
+
+	-- This key can be used for digital signature generation
+	--   SYM: Not supported (Could be a CMAC mechanism in the future?)
+	--   RSA: RSA Digital Signature
+	--   ECC: ECDSA
+	--    SM: Not supported
+	sign		(4)
+}
+  
+KeyAttribute ::= BIT STRING {
+
+	-- No special attributes are defined
+	none			(0),
+
+   	-- This symmetric key permits EXTERNAL authentication (host authentication).
+	-- NOTE: Using this method does not provide any authentication of the card,
+	--       so it is recommended to use MUTUAL authentication only.
+   	--   SYM: Supported
+   	--   RSA: Not supported
+   	--   ECC: Not supported
+	permitExternal	(4),
+
+   	-- This symmetric key permits MUTUAL authentication (host authentication).
+   	--   SYM: Supported
+   	--   RSA: Not supported
+  	--   ECC: Not supported
+	permitMutual	(8),
+	
+	-- Permits this key to be imported (as opposed to generated)
+	-- Applies To: All keys (this MUST be set for symmetric keys)
+	importable	(16),
+	
+	-- Uses the Chinese Remainder Theorem key format instead of vanilla RSA
+	-- Applies to: RSA keys only
+	rsaCRT (32)
+}
+
+KeyMechanism ::= ENUMERATED {
+	undefined (0),
+  tdea192 (3),
+	rsa1024 (6),
+	rsa2048 (7),
+	rsa3072 (5),
+	rsa4096 (22),
+	aes128 (8),
+	aes192 (10),
+	aes256 (12),
+	ecc256 (17),
+	ecc384 (20),
+	cs2 (39),
+	cs7 (46)
+}
+
+PinCharSet ::= ENUMERATED {
+
+	-- Only numeric digits (30h to 39h) permitted (NIST Default)
+	numeric				(0),
+
+	-- All printable alphanumeric characters permitted, case sensitive
+	alphaCaseVariant 	(1),
+
+	-- All printable alphanumeric characters permitted, case insensitive
+	alphaCaseInvariant	(2),
+
+	-- All binary values permitted (00 to FFh)
+	raw					(3)
+
+}
+
+END
