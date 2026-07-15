@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 from pyasn1.type.univ import *
+from pyasn1.type.constraint import *
 
 from asn1_utils import components, values, tagApp, tagCtx, tagSetApp, Optional
-
 
 class AccessMode(Enumerated):  # OK
     namedValues = values({
@@ -61,8 +61,8 @@ class PinCharSet(Enumerated):  # OK
 class PutDataCreateObjectRequest(Sequence):  # OK
     componentType = components({
         'id': tagCtx(OctetString(), 11),
-        'modeContact': tagCtx(AccessMode(), 12),
-        'modeContactless': tagCtx(AccessMode(), 13),
+        'modeContact': tagCtx(OctetString(subtypeSpec=ValueSizeConstraint(1, 1)), 12),
+        'modeContactless': tagCtx(OctetString(subtypeSpec=ValueSizeConstraint(1, 1)), 13),
         'adminKey': Optional(tagCtx(OctetString(), 17))
     })
 
@@ -75,8 +75,8 @@ class PutDataDeleteObjectRequest(Sequence):  # OK
 class PutDataCreateKeyRequest(Sequence):  # OK
     componentType = components({
         'id': tagCtx(OctetString(), 11),
-        'modeContact': tagCtx(AccessMode(), 12),
-        'modeContactless': tagCtx(AccessMode(), 13),
+        'modeContact': tagCtx(OctetString(subtypeSpec=ValueSizeConstraint(1, 1)), 12),
+        'modeContactless': tagCtx(OctetString(subtypeSpec=ValueSizeConstraint(1, 1)), 13),
         'keyAdmin': Optional(tagCtx(OctetString(), 17)),
         'keyMechanism': tagCtx(KeyMechanism(), 14),
         'keyRole': tagCtx(KeyRole(), 15),
@@ -101,8 +101,8 @@ class PutDataUpdateConfigRequest(Sequence):  # OK
 class PutDataCreateVerifierRequest(Sequence):  # OK
     componentType = components({
         'id': tagCtx(OctetString(), 11),
-        'modeContact': tagCtx(AccessMode(), 12),
-        'modeContactless': tagCtx(AccessMode(), 13),
+        'modeContact': tagCtx(OctetString(subtypeSpec=ValueSizeConstraint(1, 1)), 12),
+        'modeContactless': tagCtx(OctetString(subtypeSpec=ValueSizeConstraint(1, 1)), 13),
         'minLength': tagCtx(Integer(), 14),
         'maxLength': tagCtx(Integer(), 15),
         'retriesContact': tagCtx(Integer(), 16),
@@ -126,9 +126,9 @@ class PutDataRequest(Choice):  # OK
         'createVerifierRequest': tagApp(PutDataCreateVerifierRequest(), 5, True),
         'createKeyRequest': tagApp(PutDataCreateKeyRequest(), 6, True),
         'updateConfigRequest': tagApp(PutDataUpdateConfigRequest(), 8, True),
-        'deleteObjectRequest': tagApp(PutDataDeleteObjectRequest(), 9, True),
-        'deletePinRequest': tagApp(PutDataDeletePinRequest(), 10, True),
-        'deleteKeyRequest': tagApp(PutDataDeleteKeyRequest(), 11, True),
+        'deleteObjectRequest': tagApp(PutDataDeleteObjectRequest(), 9, True),  # NOT IMPLEMENTED BY THE APPLET
+        'deletePinRequest': tagApp(PutDataDeletePinRequest(), 10, True),       # NOT IMPLEMENTED BY THE APPLET
+        'deleteKeyRequest': tagApp(PutDataDeleteKeyRequest(), 11, True),       # NOT IMPLEMENTED BY THE APPLET
         'secureRequest': tagApp(Null(), 31, False)
     })
 

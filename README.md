@@ -20,12 +20,14 @@ All commands are sent on the GlobalPlatform SCP03 secure channel, with command a
 | Generate self-signed certificate     | Done                  |
 | Secure the applet                    | Done                  |
 
-1. ACLs and PIN length are personalizable by modifying `initial_setup.py`, default is 4 to 8 digits.
+1. ACLs, PIN lengths, PIN retries, etc. are personalizable by modifying the files in `config-files/`.  
+   PIN length is by default 4 to 8 digits, PUK is 8 digits; 3 retries for PIN, 9 retries for PUK.
 
 ## Applet installation
 
-Build the applet, change `APPLICATION_LABEL` in `src-platform/jc305/org/openfips201/applet/Platform.java` if you are not building
-for a P71D600 target (J3R452).
+Install a prebuilt applet .cap file from [prebuilt-applet/](prebuilt-applet/) or build the applet yourself,
+changing `APPLICATION_LABEL` in `src-platform/jc305/org/openfips201/applet/Platform.java` if you are not building for a
+P71D600 target (J3R452).
 
 Then install the applet with the `CardReset` privilege as required by the specification:
 
@@ -64,7 +66,7 @@ Otherwise, you need to replace `./openfips201.py` by `./openfips201.py -r READER
 
 See `./openfips201.py --help` for more details.
 
-### Overview of subcommands
+### Overview of commands
 
 ```
 usage: openfips201.py [-h] [-r READER] [--aid AID] [--key-mac KEY_MAC] [--key-enc KEY_ENC] COMMAND ...
@@ -81,11 +83,12 @@ options:
 command:
   COMMAND
     initialize         Initialize the PIN, admin key and data objects
+    set-config         Set the config from a user-provided YAML file
     create-key         Create a key slot
-    delete-key         Delete a key
     set-admin-key      Set the admin key 9B
     set-pin            Set a PIN or PUK code
-    make-key           Generate key pairs and certificates/certificate signing requests
+    keys               Generate key pairs and certificates/certificate signing requests
+    secure-applet      Set the applet state to SECURED and prevent further admin commands
 
 Call this program without a subcommand to print version and status information
 ```
@@ -116,7 +119,8 @@ $ ./openfips201.py initialize --pin 132435 --puk 08978675 --admin-key '010203040
 Initialization only happens once. Deleting data objects or key slots (for instance to change the algo type)
 is not supported by the applet. Delete and reinstall the applet if it's needed.
 
-The data object creation can be customized in `initial_setup.py`.
+The data object creation can be customized with the YAML files in [config-files/](config-files/), and any custom
+configuration can be loaded with the `set-config` command.
 
 ### Set PIN and PUK
 

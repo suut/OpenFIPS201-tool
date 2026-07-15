@@ -580,8 +580,47 @@ def yaml_var_parser(loader: yaml.CLoader, value: yaml.ScalarNode):
     return yaml_vars[value.value]
 
 
+def parse_access_mode(s):
+    vals = s.replace(' ', '').replace('|', ',').split(',')
+    out = 0
+    for val in vals:
+        out |= (asn1_put_data_v2.AccessMode.namedValues[val] & 0xFF)
+    return bytes((out,))
+
+
+def yaml_access_mode_parser(loader: yaml.CLoader, value: yaml.ScalarNode):
+    return parse_access_mode(value.value)
+
+
+def parse_key_role(s):
+    vals = s.replace(' ', '').replace('|', ',').split(',')
+    out = 0
+    for val in vals:
+        out |= (asn1_put_data_v2.KeyRole.namedValues[val] & 0xFF)
+    return out
+
+
+def yaml_key_role_parser(loader: yaml.CLoader, value: yaml.ScalarNode):
+    return parse_key_role(value.value)
+
+
+def parse_key_attribute(s):
+    vals = s.replace(' ', '').replace('|', ',').split(',')
+    out = 0
+    for val in vals:
+        out |= (asn1_put_data_v2.KeyAttribute.namedValues[val] & 0xFF)
+    return bytes((out,))
+
+
+def yaml_key_attribute_parser(loader: yaml.CLoader, value: yaml.ScalarNode):
+    return parse_key_attribute(value.value)
+
+
 yaml.CLoader.add_constructor('!x', yaml_x_parser)
 yaml.CLoader.add_constructor('!var', yaml_var_parser)
+yaml.CLoader.add_constructor('!accessMode', yaml_access_mode_parser)
+yaml.CLoader.add_constructor('!keyRole', yaml_key_role_parser)
+yaml.CLoader.add_constructor('!keyAttribute', yaml_key_attribute_parser)
 
 
 def split_algo(algo):
@@ -618,14 +657,14 @@ set_config_parser.add_argument('file', help='The YAML file to load', metavar='FI
 create_key_parser = subparsers.add_parser('create-key', help='Create a key slot')
 create_key_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
 create_key_parser.add_argument('algo', help='Key algo (one of %(choices)s)', choices=('tdea192', 'rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'aes128', 'aes192', 'aes256', 'ecc256', 'ecc384', 'cs2', 'cs7'), metavar='ALGO')
-create_key_parser.add_argument('role', help='Key role (one of %(choices)s)', choices=[*asn1_put_data_v2.KeyRole.namedValues.keys()], metavar='ROLE')
+create_key_parser.add_argument('role', help='Key role (combination of %(choices)s)', choices=[*asn1_put_data_v2.KeyRole.namedValues.keys()], metavar='ROLE')
 create_key_parser.add_argument('--no-rsa-crt', action='store_true', help='Do not use RSA CRT for RSA keys')
 create_key_parser.add_argument('--permit-external', action='store_true', help='Permit external authenticate')
 create_key_parser.add_argument('--permit-mutual', action='store_true', help='Permit mutual authenticate')
 create_key_parser.add_argument('--importable', action='store_true', help='Key is importable')
 create_key_parser.add_argument('--admin-key', default='9B', help='Admin key (default %(default)s)', metavar='KEY')
-create_key_parser.add_argument('--mode-contact', default='always', choices=[*asn1_put_data_v2.AccessMode.namedValues.keys()], help='Contact ACL (one of %(choices)s; default %(default)s)', metavar='MODE')
-create_key_parser.add_argument('--mode-contactless', default='always', choices=[*asn1_put_data_v2.AccessMode.namedValues.keys()], help='Contactless ACL (one of %(choices)s; default %(default)s)', metavar='MODE')
+create_key_parser.add_argument('--mode-contact', default='pin|userAdmin', choices=[*asn1_put_data_v2.AccessMode.namedValues.keys()], help='Contact ACL (combination of %(choices)s; default %(default)s)', metavar='MODE')
+create_key_parser.add_argument('--mode-contactless', default='pin|userAdmin', choices=[*asn1_put_data_v2.AccessMode.namedValues.keys()], help='Contactless ACL (combination of %(choices)s; default %(default)s)', metavar='MODE')
 
 set_admin_key_parser = subparsers.add_parser('set-admin-key', help='Set the admin key 9B')
 set_admin_key_parser.add_argument('algo', choices=['tdea192', 'aes128', 'aes192', 'aes256'], metavar='ALGO', help='Key algorithm (one of %(choices)s)')
@@ -762,8 +801,8 @@ match args.command:
             attr |= asn1_put_data_v2.KeyAttribute.namedValues['importable']
 
         try:
-            set_config(scp, CONFIG_DIR / 'create_key.yaml', key_id=key_id, mode_contact=args.mode_contact,
-                       mode_contactless=args.mode_contactless, role=args.role, algo=args.algo,
+            set_config(scp, CONFIG_DIR / 'create_key.yaml', key_id=key_id, mode_contact=parse_access_mode(args.mode_contact),
+                       mode_contactless=parse_access_mode(args.mode_contactless), role=args.role, algo=args.algo,
                        admin_key=admin_key, attr=attr.to_bytes(length=1))
         except scp03.APDUException as e:
             if e.sw == 0x6E27:

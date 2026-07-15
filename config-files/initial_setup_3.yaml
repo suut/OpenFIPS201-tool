@@ -2,66 +2,66 @@
 
 - createObjectRequest:
     id: !x "5FC114"  # Retired X509 Certificate for Key Management 8
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC115"  # Retired X509 Certificate for Key Management 9
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC116"  # Retired X509 Certificate for Key Management 10
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC117"  # Retired X509 Certificate for Key Management 11
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC118"  # Retired X509 Certificate for Key Management 12
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC119"  # Retired X509 Certificate for Key Management 13
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC11A"  # Retired X509 Certificate for Key Management 14
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC11B"  # Retired X509 Certificate for Key Management 15
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC11C"  # Retired X509 Certificate for Key Management 16
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC11D"  # Retired X509 Certificate for Key Management 17
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC11E"  # Retired X509 Certificate for Key Management 18
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC11F"  # Retired X509 Certificate for Key Management 19
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
 - createObjectRequest:
     id: !x "5FC120"  # Retired X509 Certificate for Key Management 20
-    modeContact: "always"
-    modeContactless: "always"
+    modeContact: !accessMode "always"
+    modeContactless: !accessMode "always"
     adminKey: !x "9B"
