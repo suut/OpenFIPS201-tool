@@ -541,15 +541,15 @@ def create_keypair(scp: scp03.SCP03, key_id: bytes, algo: str) -> asn1_x509.Subj
         pubkey_rsa['publicExponent'] = Integer(BitString.fromOctetString(pubkey['rsaExponent']).asInteger())
         pubkey_x509['subjectPublicKey'] = BitString.fromOctetString(der_encoder.encode(pubkey_rsa))
         pubkey_x509['algorithm']['algorithm'] = asn1_x509.oids['rsaEncryption']
-        pubkey_x509['algorithm']['parameters'] = Null()
+        pubkey_x509['algorithm']['parameters'] = Null(b'')  # force a value instead of a schema
 
-    elif algo.startswith('ecc'):
+    elif algo.startswith('ecc') or algo.startswith('cs'):
         pubkey, _ = ber_decoder.decode(pubkey_raw, asn1Spec=asn1_generate_asymmetric_key_pair.PubkeyECCResponse())
         pubkey_x509['subjectPublicKey'] = BitString.fromOctetString(pubkey['point'])
         pubkey_x509['algorithm']['algorithm'] = asn1_x509.oids['ecPublicKey']
-        if algo == 'ecc256':
+        if algo in ('ecc256', 'cs2'):
             pubkey_x509['algorithm']['parameters'] = asn1_x509.oids['prime256v1']
-        elif algo == 'ecc384':
+        elif algo in ('ecc384', 'cs7'):
             pubkey_x509['algorithm']['parameters'] = asn1_x509.oids['ansip384r1']
 
     print('Create key pair success')
@@ -680,7 +680,7 @@ generate_key_subparsers = generate_key_parser.add_subparsers(title='subcommand',
 
 make_keypair_parser = generate_key_subparsers.add_parser('make-keypair-only', help='Make a keypair and save the public key')
 make_keypair_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
-make_keypair_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
+make_keypair_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384', 'cs2', 'cs7'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
 make_keypair_parser.add_argument('-o', '--output', default='card-{KEY_ID}.key', help='Where to save the the public key (default %(default)s)', metavar='FILE')
 
 make_self_signed_parser = generate_key_subparsers.add_parser('make-self-signed', help='Make a self-signed certificate')
@@ -711,7 +711,7 @@ digest_group.add_argument('--sha512', dest='digest', action='store_const', const
 
 make_csr_parser = generate_key_subparsers.add_parser('make-csr', help='Make a certificate signing request intended to be signed by an external CA')
 make_csr_parser.add_argument('key_id', help='Key ID (9A, 9C, ...)', metavar='KEY-ID')
-make_csr_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
+make_csr_parser.add_argument('algo', choices=('rsa1024', 'rsa2048', 'rsa3072', 'rsa4096', 'ecc256', 'ecc384', 'cs2', 'cs7'), help='The public-key algorithm to use (choices %(choices)s)', metavar='ALGO')
 make_csr_parser.add_argument('--with-key', help='Use the public key that was previously generated with make-keypair-only', metavar='PUBKEY')
 make_csr_parser.add_argument('-o', '--output', default='card-{KEY_ID}.csr', help='Where to save the certificate signing request (default %(default)s)', metavar='FILE')
 
@@ -927,6 +927,22 @@ match args.command:
                         pubkey_x962 = pubkey.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
                         reqs.append(change_key_req(eccS=int_to_bytes(numbers.private_value)))
                         reqs.append(change_key_req(eccW=pubkey_x962))
+
+                    case ('cs', length):
+                        key: EllipticCurvePrivateKey = load_private_key(key_data)
+                        assert isinstance(key, EllipticCurvePrivateKey)
+                        if length == '2':
+                            assert isinstance(key.curve, SECP256R1)
+                        elif length == '7':
+                            assert isinstance(key.curve, SECP384R1)
+                        else:
+                            raise ValueError(f'Invalid ECC key size {length}')
+                        numbers = key.private_numbers()
+                        pubkey = key.public_key()
+                        pubkey_x962 = pubkey.public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+                        reqs.append(change_key_req(eccS=int_to_bytes(numbers.private_value)))
+                        reqs.append(change_key_req(eccW=pubkey_x962))
+
 
                     case (algo_name, length):  # symmetric key algos
                         reqs.append(change_key_req(key=key_data))

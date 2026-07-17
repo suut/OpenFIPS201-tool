@@ -257,15 +257,15 @@ def encode_basic_constraints(ca: bool, path_len: int|None = None) -> bytes:
     constraints = BasicConstraints()
     constraints['cA'] = ca
     if path_len is not None:
-        constraints['pathLen'] = path_len
+        constraints['pathLenConstraint'] = path_len
     return der_encoder.encode(constraints)
 
 
 def encode_key_usage(usages: list[str]) -> bytes:
     bitfield = 0
     for usage in usages:
-        bitfield |= (1 << KeyUsage.namedValues[usage])
-    return der_encoder.encode(KeyUsage(bitfield))
+        bitfield |= (1 << (8 - KeyUsage.namedValues[usage]))
+    return der_encoder.encode(KeyUsage(f'{bitfield:09b}'))
 
 
 def encode_ext_key_usage(usages: list[str]) -> bytes:
@@ -273,8 +273,10 @@ def encode_ext_key_usage(usages: list[str]) -> bytes:
     for usage in usages:
         if usage == 'anyExtendedKeyUsage':
             ext_key_usage.append(oids['anyExtendedKeyUsage'])
+        elif (key := f'id-kp-{usage}') in oids:
+            ext_key_usage.append(oids[key])
         else:
-            ext_key_usage.append(oids[f'id-kp-{usage}'])
+            ext_key_usage.append(ObjectIdentifier(usage))
     return der_encoder.encode(ext_key_usage)
 
 
