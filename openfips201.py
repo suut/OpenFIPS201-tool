@@ -492,6 +492,18 @@ def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -
         # Generate key pair
         pubkey_x509 = create_keypair(scp, key_id, algo)
 
+    if algo.startswith('rsa'):
+        hash_function = hashlib.sha256
+        sig_algo = asn1_x509.oids['sha256WithRSAEncryption']
+    elif algo == 'ecc256':
+        hash_function = hashlib.sha256
+        sig_algo = asn1_x509.oids['ecdsa-with-SHA256']
+    elif algo == 'ecc384':
+        hash_function = hashlib.sha384
+        sig_algo = asn1_x509.oids['ecdsa-with-SHA384']
+    else:
+        raise ValueError('invalid algo')
+
     # Construct the CSR
     csr = asn1_x509.CertificationRequest()
     csr['certificationRequestInfo']['version'] = 0
@@ -499,16 +511,12 @@ def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -
 
     to_sign = der_encoder.encode(csr['certificationRequestInfo'])
 
-    signed_csr = sign(scp, key_id, algo, to_sign)
-    sig_ok = verify_signature(pubkey_x509, to_sign, signed_csr)
+    signed_csr = sign(scp, key_id, algo, to_sign, hash_function=hash_function)
+    sig_ok = verify_signature(pubkey_x509, to_sign, signed_csr, hash_function=hash_function)
     assert sig_ok, 'Signature must be valid (was the correct key used?)' if existing_pubkey else 'Signature must be valid'
     print('Signature OK')
 
-    if algo.startswith('rsa'):
-        csr['signatureAlgorithm']['algorithm'] = asn1_x509.oids['sha256WithRSAEncryption']
-
-    elif algo.startswith('ecc'):
-        csr['signatureAlgorithm']['algorithm'] = asn1_x509.oids['ecdsa-with-SHA256']
+    csr['signatureAlgorithm']['algorithm'] = sig_algo
 
     csr['signature'] = BitString.fromOctetString(signed_csr)
 
