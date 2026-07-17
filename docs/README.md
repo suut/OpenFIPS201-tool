@@ -6,11 +6,21 @@ once the applet is set to `SECURED` with the [secure-applet](secure-applet.md) c
 
 ## Common arguments
 
+The following are the common arguments, which must come before the subcommand.
+
 - `-h, --help`: show the help message
 - `-r, --reader READER`: PC/SC reader index to use (0-indexed, the list is printed if there's more than 1 reader available)
 - `--aid AID`: OpenFIPS201 AID (default `A000000308000010000100`)
 - `--key-mac KEY_MAC`: SCP-03 MAC key (default `404142434445464748494A4B4C4D4E4F`)
 - `--key-enc KEY_ENC`: SCP-03 ENC key (default `404142434445464748494A4B4C4D4E4F`)
+
+Example:
+```sh
+./openfips201.py \
+  --key-mac 'B0FA4D0F8DC822AF43C6608BD559661A' \
+  --key-enc '51B27C4CC83F6C3EB153B9C9A98F7B38' \
+  set-pin 123456
+```
 
 ## Installation
 
@@ -62,3 +72,11 @@ The same warning about the execution policy as [for installation](#windows-insta
 - [set-pin](set-pin.md): Set a PIN or PUK code
 - [keys](keys.md): Generate key pairs and certificates/certificate signing requests
 - [secure-applet](secure-applet.md): Set the applet state to `SECURED` and prevent further admin commands
+
+## Recipes
+
+- [Custom config](recipes/custom-config.md): load arbitrary user-defined bulk configuration for specific scenarios
+- [Self-signed RSA signature certificate with imported key](recipes/self-signed-rsa-signature-cert-with-imported-key.md):
+  load a self-signed certificate with an imported key in order to back up the key
+- [Sign CSR and load certificate](recipes/sign-csr-and-load-certificate.md): sign a CSR into a certificate using an external
+  CA and load the certificate into the card
