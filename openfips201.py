@@ -479,15 +479,16 @@ def make_csr(scp: scp03.SCP03, key_id: bytes, algo: str, existing_pubkey=None) -
 
     if existing_pubkey:
         pubkey_x509, _ = der_decoder.decode(existing_pubkey, asn1Spec=asn1_x509.SubjectPublicKeyInfo())
+        pubkey_x509['algorithm']['parameters'], _ = der_decoder.decode(pubkey_x509['algorithm']['parameters'])
         if algo.startswith('rsa'):
-            assert pubkey_x509['algorithm'] == asn1_x509.oids['rsaEncryption']
-            assert pubkey_x509['parameters'] == Null()
+            assert pubkey_x509['algorithm']['algorithm'] == asn1_x509.oids['rsaEncryption']
+            assert pubkey_x509['algorithm']['parameters'] == Null()
         elif algo.startswith('ecc'):
-            assert pubkey_x509['algorithm'] == asn1_x509.oids['ecPublicKey']
+            assert pubkey_x509['algorithm']['algorithm'] == asn1_x509.oids['ecPublicKey']
             if algo == 'ecc256':
-                assert pubkey_x509['parameters'] == asn1_x509.oids['prime256v1']
+                assert pubkey_x509['algorithm']['parameters'] == asn1_x509.oids['prime256v1']
             else:
-                assert pubkey_x509['parameters'] == asn1_x509.oids['ansip384r1']
+                assert pubkey_x509['algorithm']['parameters'] == asn1_x509.oids['ansip384r1']
     else:
         # Generate key pair
         pubkey_x509 = create_keypair(scp, key_id, algo)
